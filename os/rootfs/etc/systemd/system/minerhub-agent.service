@@ -1,0 +1,17 @@
+[Unit]
+Description=MinerHub Agent (SRBMiner manager)
+After=network-online.target minerhub-boot.service
+Wants=network-online.target
+ConditionPathExists=/opt/minerhub/agent.json
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/minerhub/agent.py
+Restart=always
+RestartSec=5
+User=root
+LimitNOFILE=65535
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target

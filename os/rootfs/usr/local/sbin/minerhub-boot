@@ -1,0 +1,283 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+"""
+MinerHub OS 开机配置程序 —— 每次开机最早阶段运行（早于网络、SSH、Agent）
+读取 U 盘 MINERHUB 分区里的 minerhub.txt，应用：
+  首次开机自动扩容根分区 / 生成 SSH 主机密钥 / 主机名（矿机名） / 时区 / 密码 /
+  SSH 公钥 / 网络（DHCP 或静态 IP） / MinerHub Agent 配置 / 控制台欢迎信息
+"""
+import glob, hashlib, json, os, re, shutil, subprocess, time
+
+CFG_MNT = "/mnt/minerhub"
+CFG = CFG_MNT + "/minerhub.txt"
+STATE = "/var/lib/minerhub"
+CACHE = STATE + "/minerhub.txt"
+AGENT_CONF = "/opt/minerhub/agent.json"
+USER = "miner"
+
+
+def log(m):
+    print("minerhub-boot: %s" % m, flush=True)
+
+
+def run(cmd, timeout=60):
+    try:
+        p = subprocess.run(cmd, shell=isinstance(cmd, str), capture_output=True, text=True, timeout=timeout)
+        return p.returncode, (p.stdout or "") + (p.stderr or "")
+    except Exception as e:
+        return -1, str(e)
+
+
+def read(p, d=""):
+    try:
+        with open(p, encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return d
+
+
+def write_if_changed(path, content, mode=None):
+    """只在内容变化时写入，尽量减少 U 盘写入"""
+    if read(path, None) == content:
+        return False
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(content)
+    if mode is not None:
+        os.chmod(tmp, mode)
+    os.replace(tmp, path)
+    return True
+
+
+def parse(path):
+    d = {}
+    with open(path, encoding="utf-8-sig", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            v = re.sub(r"\s+#.*$", "", v).strip().strip('"').strip("'").strip()
+            d[k.strip().upper()] = v
+    return d
+
+
+def load_cfg():
+    os.makedirs(STATE, exist_ok=True)
+    # U 盘枚举可能较慢：最多等 60 秒配置分区出现，没被 systemd 挂上就自己挂
+    for _ in range(120):
+        if os.path.isfile(CFG):
+            break
+        if not os.path.ismount(CFG_MNT) and os.path.exists("/dev/disk/by-label/MINERHUB"):
+            run(["mount", CFG_MNT], 30)
+            continue
+        time.sleep(0.5)
+    if os.path.isfile(CFG):
+        try:
+            with open(CFG, "rb") as f:
+                data = f.read()
+            if read(CACHE, None) is None or open(CACHE, "rb").read() != data:
+                with open(CACHE, "wb") as f:
+                    f.write(data)
+        except Exception as e:
+            log("缓存配置失败: %s" % e)
+        return parse(CFG)
+    if os.path.isfile(CACHE):
+        log("找不到配置分区，使用上次缓存的配置")
+        return parse(CACHE)
+    log("没有找到 minerhub.txt")
+    return {}
+
+
+def grow_root():
+    marker = STATE + "/grown"
+    if os.path.exists(marker):
+        return
+    rc, src = run(["findmnt", "-no", "SOURCE", "/"])
+    src = src.strip()
+    m = re.search(r"(\d+)$", src)
+    rc, pk = run(["lsblk", "-no", "PKNAME", src])
+    pk = pk.strip().splitlines()[0] if pk.strip() else ""
+    if not src.startswith("/dev/") or not m or not pk:
+        log("无法识别根分区（%s），跳过扩容" % src)
+        return
+    disk, part = "/dev/" + pk, m.group(1)
+    run(["sgdisk", "-e", disk])               # 把 GPT 备份表挪到 U 盘真正的末尾
+    run(["partx", "-u", disk])
+    rc, out = run(["growpart", disk, part], 120)
+    log("扩容分区: %s" % out.strip().replace("\n", " "))
+    rc, out = run(["resize2fs", src], 600)
+    log("扩容文件系统: rc=%s" % rc)
+    with open(marker, "w") as f:
+        f.write(time.ctime() + "\n")
+
+
+def nics():
+    """物理有线网卡 [(名称, MAC)]，等最多 15 秒让驱动加载"""
+    res = []
+    for _ in range(30):
+        res = []
+        for p in sorted(glob.glob("/sys/class/net/*")):
+            n = os.path.basename(p)
+            if n == "lo" or not os.path.exists(p + "/device") or os.path.exists(p + "/wireless"):
+                continue
+            mac = read(p + "/address").strip().lower()
+            if mac and mac != "00:00:00:00:00:00":
+                res.append((n, mac))
+        if res:
+            break
+        time.sleep(0.5)
+    return res
+
+
+def set_hostname(cfg, nic_list):
+    name = cfg.get("RIG_NAME", "").strip()
+    if not name:
+        mac = nic_list[0][1].replace(":", "") if nic_list else hashlib.md5(read("/etc/machine-id").encode()).hexdigest()
+        name = "rig-" + mac[-6:]
+    name = re.sub(r"[^A-Za-z0-9-]", "-", name).strip("-")[:63] or "rig"
+    write_if_changed("/etc/hostname", name + "\n")
+    try:
+        with open("/proc/sys/kernel/hostname", "w") as f:
+            f.write(name)
+    except Exception:
+        pass
+    hosts = read("/etc/hosts")
+    line = "127.0.1.1\t%s" % name
+    if re.search(r"^127\.0\.1\.1\s.*$", hosts, re.M):
+        new = re.sub(r"^127\.0\.1\.1\s.*$", line, hosts, flags=re.M)
+    else:
+        new = hosts.rstrip("\n") + "\n" + line + "\n"
+    write_if_changed("/etc/hosts", new)
+    return name
+
+
+def set_timezone(tz):
+    if not tz or not os.path.isfile("/usr/share/zoneinfo/" + tz):
+        if tz:
+            log("时区无效: %s" % tz)
+        return
+    target = "/usr/share/zoneinfo/" + tz
+    if os.path.realpath("/etc/localtime") != os.path.realpath(target):
+        try:
+            os.remove("/etc/localtime")
+        except FileNotFoundError:
+            pass
+        os.symlink(target, "/etc/localtime")
+    write_if_changed("/etc/timezone", tz + "\n")
+
+
+def set_password(pw):
+    if not pw:
+        return
+    h = hashlib.sha256(("minerhub|" + pw).encode()).hexdigest()
+    if read(STATE + "/pw.sha") == h:
+        return
+    p = subprocess.run(["chpasswd"], input="%s:%s\n" % (USER, pw), text=True, capture_output=True)
+    if p.returncode == 0:
+        write_if_changed(STATE + "/pw.sha", h, 0o600)
+        log("已更新 %s 的密码" % USER)
+    else:
+        log("修改密码失败: %s" % p.stderr.strip())
+
+
+def set_ssh_key(key):
+    if not key:
+        return
+    d = "/home/%s/.ssh" % USER
+    if write_if_changed(d + "/authorized_keys", key.strip() + "\n", 0o600):
+        os.chmod(d, 0o700)
+        run(["chown", "-R", "%s:%s" % (USER, USER), d])
+
+
+def set_network(cfg, nic_list):
+    dns = " ".join(cfg.get("DNS", "").replace(",", " ").split())
+    static = cfg.get("STATIC_IP", "").strip()
+    files = {}
+    if static and nic_list:
+        if "/" not in static:
+            static += "/24"
+        body = "[Match]\nMACAddress=%s\n\n[Network]\nAddress=%s\n" % (nic_list[0][1], static)
+        if cfg.get("GATEWAY"):
+            body += "Gateway=%s\n" % cfg["GATEWAY"]
+        for d in (dns or "1.1.1.1 8.8.8.8").split():
+            body += "DNS=%s\n" % d
+        files["10-minerhub-static.network"] = body
+    dhcp = "[Match]\nType=ether\nName=en* eth*\n\n[Network]\nDHCP=yes\n"
+    for d in dns.split():
+        dhcp += "DNS=%s\n" % d
+    dhcp += "\n[DHCPv4]\nClientIdentifier=mac\n"
+    files["20-minerhub-dhcp.network"] = dhcp
+    for f in glob.glob("/etc/systemd/network/*minerhub*.network"):
+        if os.path.basename(f) not in files:
+            os.remove(f)
+    for n, body in files.items():
+        write_if_changed("/etc/systemd/network/" + n, body)
+
+
+def set_agent(cfg, rig):
+    server, key = cfg.get("SERVER", "").rstrip("/"), cfg.get("FARM_KEY", "")
+    if not server or not key or "__" in server or "__" in key:
+        if os.path.exists(AGENT_CONF):
+            os.remove(AGENT_CONF)
+        log("minerhub.txt 里没填 SERVER / FARM_KEY，Agent 不启动")
+        return False
+    try:
+        c = json.loads(read(AGENT_CONF, "{}") or "{}")
+    except Exception:
+        c = {}
+    c.update({"server": server, "farm_key": key, "rig_id": rig})
+    c.setdefault("miner_path", "/opt/minerhub/srbminer/SRBMiner-MULTI")
+    c.setdefault("api_port", 21550)
+    c.setdefault("interval", 10)
+    write_if_changed(AGENT_CONF, json.dumps(c, indent=2, ensure_ascii=False) + "\n", 0o600)
+    return True
+
+
+def set_issue(rig, cfg, nic_list, agent_ok):
+    srv = cfg.get("SERVER", "") if agent_ok else "NOT CONFIGURED - edit minerhub.txt on the USB stick"
+    mac = nic_list[0][1] if nic_list else "-"
+    issue = (
+        "\n  MinerHub OS  |  rig: %s  |  \\l\n"
+        "  IP: \\4   MAC: %s\n"
+        "  Panel: %s\n"
+        "  Login: miner  (password = PASSWORD in minerhub.txt)   Tools: mh status / mh log\n\n"
+    ) % (rig, mac, srv)
+    write_if_changed("/etc/issue", issue)
+
+
+def write_rig_info(rig, nic_list):
+    """把矿机名和 MAC 写回 U 盘配置分区，插到电脑上就知道这根 U 盘是哪台矿机"""
+    if not os.path.ismount(CFG_MNT):
+        return
+    txt = "rig name: %s\r\nMAC: %s\r\n" % (rig, ", ".join("%s=%s" % n for n in nic_list) or "-")
+    try:
+        write_if_changed(CFG_MNT + "/rig-info.txt", txt)
+    except Exception:
+        pass
+
+
+def main():
+    cfg = load_cfg()
+    try:
+        grow_root()
+    except Exception as e:
+        log("扩容出错: %s" % e)
+    if not glob.glob("/etc/ssh/ssh_host_*_key"):
+        run(["ssh-keygen", "-A"])
+        log("已生成 SSH 主机密钥")
+    nic_list = nics()
+    rig = set_hostname(cfg, nic_list)
+    set_timezone(cfg.get("TIMEZONE") or cfg.get("TZ"))
+    set_password(cfg.get("PASSWORD"))
+    set_ssh_key(cfg.get("SSH_KEY"))
+    set_network(cfg, nic_list)
+    ok = set_agent(cfg, rig)
+    set_issue(rig, cfg, nic_list, ok)
+    write_rig_info(rig, nic_list)
+    log("完成：矿机名 %s，面板 %s" % (rig, cfg.get("SERVER", "-")))
+
+
+if __name__ == "__main__":
+    main()

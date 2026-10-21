@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+# 面板数据 / dashboard data
+data/
+*.db
+# 镜像构建产物 / image build output
+os/out/
+os/work/
+*.img
+*.img.xz
+# 可选的第三方矿工二进制 / optional miner binaries
+server/static/dl/ldminer
+server/static/dl/*.tar.gz

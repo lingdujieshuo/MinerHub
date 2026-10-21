@@ -1,0 +1,16 @@
+[Unit]
+Description=MinerHub OS boot configuration (minerhub.txt on the USB stick)
+DefaultDependencies=no
+Wants=mnt-minerhub.mount
+After=local-fs.target systemd-remount-fs.service mnt-minerhub.mount systemd-udev-trigger.service
+Before=sysinit.target systemd-networkd.service ssh.service ssh.socket minerhub-agent.service shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/minerhub-boot
+TimeoutStartSec=300
+
+[Install]
+WantedBy=sysinit.target

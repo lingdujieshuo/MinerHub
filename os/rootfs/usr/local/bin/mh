@@ -1,0 +1,31 @@
+#!/bin/bash
+# MinerHub OS 命令行小工具
+CFG=/mnt/minerhub/minerhub.txt
+case "${1:-status}" in
+  status)
+    echo "矿机名 : $(hostname)"
+    echo "IP     : $(hostname -I 2>/dev/null)"
+    echo "面板   : $(sudo python3 -c 'import json;print(json.load(open("/opt/minerhub/agent.json"))["server"])' 2>/dev/null || echo 未配置)"
+    echo "Agent  : $(systemctl is-active minerhub-agent)"
+    echo "矿工   : $(pgrep -x SRBMiner-MULTI >/dev/null && echo 运行中 || echo 未运行)"
+    echo
+    nvidia-smi --query-gpu=index,name,temperature.gpu,fan.speed,power.draw,clocks.sm,clocks.mem --format=csv,noheader 2>&1 | sed 's/^/  GPU /'
+    echo; tail -n 5 /var/log/minerhub/miner.log 2>/dev/null ;;
+  log)    tail -n 100 -f /var/log/minerhub/miner.log ;;
+  agent)  journalctl -u minerhub-agent -n 100 -f ;;
+  config) sudo nano "$CFG" && sudo "$0" apply ;;
+  apply)  sudo systemctl restart minerhub-boot && sudo systemctl restart systemd-networkd minerhub-agent && echo 已应用 ;;
+  update)
+    SRV=$(sudo python3 -c 'import json;print(json.load(open("/opt/minerhub/agent.json"))["server"])') || exit 1
+    sudo curl -fsSL "$SRV/dl/agent.py" -o /opt/minerhub/agent.py.new && sudo mv /opt/minerhub/agent.py.new /opt/minerhub/agent.py \
+      && sudo systemctl restart minerhub-agent && echo "Agent 已从面板更新" ;;
+  update-srb)
+    URL="${2:-}"
+    [ -z "$URL" ] && URL=$(curl -fsSL https://api.github.com/repos/doktor83/SRBMiner-Multi/releases/latest | python3 -c 'import sys,json;d=json.load(sys.stdin);print(next(a["browser_download_url"] for a in d["assets"] if "Linux" in a["name"]))')
+    [ -z "$URL" ] && { echo "用法: mh update-srb <SRBMiner Linux 压缩包 URL>"; exit 1; }
+    T=$(mktemp -d); curl -fL "$URL" -o "$T/s.tar" && tar -xf "$T/s.tar" -C "$T" || exit 1
+    B=$(find "$T" -type f -name SRBMiner-MULTI | head -1); [ -n "$B" ] || { echo 压缩包里没有 SRBMiner-MULTI; exit 1; }
+    sudo systemctl stop minerhub-agent; sudo cp -rf "$(dirname "$B")"/. /opt/minerhub/srbminer/; sudo chmod +x /opt/minerhub/srbminer/SRBMiner-MULTI
+    sudo systemctl start minerhub-agent; rm -rf "$T"; echo "SRBMiner 已更新: $URL" ;;
+  *) echo "用法: mh [status|log|agent|config|apply|update|update-srb [url]]" ;;
+esac

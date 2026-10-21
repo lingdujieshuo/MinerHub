@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MinerHub 矿场</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2l12 7v14l-12 7-12-7V9z' fill='%23f5b301'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0a0e13;--bg2:#0f141b;--panel:#131a23;--panel2:#18212c;--line:#222d3a;--line2:#2c3a4b;
+  --text:#dbe3ec;--muted:#7f8c9c;--dim:#5a6676;--accent:#f5b301;--accent2:#ffcf4a;
+  --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--info:#3b82f6;--radius:10px;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;min-height:100%;background:var(--bg);color:var(--text);
+  font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+body{min-height:100vh}
+a{color:var(--accent)}
+button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{background:var(--bg2);border:1px solid var(--line2);border-radius:8px;padding:8px 10px;width:100%;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+input[type=checkbox]{width:auto;accent-color:var(--accent)}
+textarea{font-family:var(--mono);font-size:12.5px}
+.btn{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap;transition:.15s}
+.btn:hover{border-color:var(--accent);color:var(--accent2)}
+.btn.primary{background:var(--accent);color:#141006;border-color:var(--accent);font-weight:600}
+.btn.primary:hover{background:var(--accent2);color:#141006}
+.btn.danger:hover{border-color:var(--bad);color:var(--bad)}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.muted{color:var(--muted)}.dim{color:var(--dim)}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.mono{font-family:var(--mono)}
+
+/* header */
+header{position:sticky;top:0;z-index:20;background:rgba(10,14,19,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.hwrap{max-width:1500px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:17px;letter-spacing:.3px}
+.logo svg{width:24px;height:24px}
+.logo small{font-weight:400;color:var(--muted);font-size:12px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;flex:1}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-size:12.5px;color:var(--muted)}
+.chip b{color:var(--text);font-weight:600;margin-left:4px}
+.chip.hs b{color:var(--accent2)}
+nav{max-width:1500px;margin:0 auto;padding:0 20px;display:flex;gap:2px;overflow-x:auto}
+nav a{padding:9px 14px;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer}
+nav a.on{color:var(--accent2);border-color:var(--accent)}
+main{max-width:1500px;margin:0 auto;padding:18px 20px 60px}
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.toolbar .sp{flex:1}
+h2{font-size:16px;margin:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+
+/* rigs */
+.rig{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
+.rig.off{opacity:.62}
+.rig-head{display:flex;align-items:center;gap:12px;padding:12px 14px;flex-wrap:wrap}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--dim);flex:none;box-shadow:0 0 0 3px rgba(255,255,255,.03)}
+.dot.mining{background:var(--ok);box-shadow:0 0 10px rgba(34,197,94,.6)}
+.dot.zero{background:var(--warn)}.dot.stopped{background:var(--info)}.dot.hot{background:var(--bad)}
+.rig-title{min-width:180px;flex:1;cursor:pointer}
+.rig-title b{font-size:15px}
+.rig-title small{display:block;color:var(--muted);font-size:12px;margin-top:1px}
+.tag{display:inline-block;padding:0 7px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);font-size:11.5px;margin-right:4px;color:var(--muted)}
+.tag.algo{color:var(--accent2);border-color:#4d3d0a;background:#231c06}
+.kpis{display:flex;gap:22px;flex-wrap:wrap}
+.kpi label{display:block;font-size:11px;color:var(--muted)}
+.kpi b{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.kpi b.hs{color:var(--accent2)}
+.acts{display:flex;gap:5px;flex-wrap:wrap}
+.gpus{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:6px;padding:0 14px 13px}
+.gpu{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-variant-numeric:tabular-nums}
+.gpu .t{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+.gpu .t span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px}
+.gpu .h{font-weight:600;font-size:13.5px;margin:2px 0;color:var(--text)}
+.gpu .m{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted)}
+.gpu.nohs .h{color:var(--warn)}
+.empty{text-align:center;padding:60px 20px;color:var(--muted)}
+.empty .btn{margin-top:14px}
+
+/* tables */
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-weight:500;color:var(--muted);font-size:12.5px;background:var(--panel2)}
+td{font-variant-numeric:tabular-nums}
+tr:hover td{background:rgba(255,255,255,.015)}
+.tbl{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:auto}
+.tbl td.wrap{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* drawer */
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;display:none}
+.mask.on{display:block}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(1000px,100vw);background:var(--bg);border-left:1px solid var(--line2);z-index:41;
+  transform:translateX(100%);transition:transform .2s;display:flex;flex-direction:column}
+.drawer.on{transform:none}
+.dhead{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.dhead h3{margin:0;font-size:17px}
+.subtabs{display:flex;gap:2px;padding:0 18px;border-bottom:1px solid var(--line);overflow-x:auto}
+.subtabs a{padding:8px 13px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
+.subtabs a.on{color:var(--accent2);border-color:var(--accent)}
+.dbody{flex:1;overflow:auto;padding:16px 18px 40px}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 16px;margin-bottom:16px}
+.kv div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0}
+.kv label{display:block;font-size:11px;color:var(--muted)}
+.kv span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+pre.out{background:#06090d;border:1px solid var(--line);border-radius:8px;padding:12px;font:12px/1.5 var(--mono);white-space:pre-wrap;word-break:break-all;max-height:62vh;overflow:auto;margin:10px 0 0;color:#c9d4df}
+.chart{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px}
+.chart h4{margin:0 0 6px;font-size:13px;font-weight:500;color:var(--muted)}
+.chart svg{width:100%;height:180px;display:block}
+
+/* modal */
+.modal{position:fixed;inset:0;z-index:60;display:none;align-items:flex-start;justify-content:center;background:rgba(0,0,0,.6);padding:5vh 16px;overflow:auto}
+.modal.on{display:flex}
+.mbox{background:var(--panel);border:1px solid var(--line2);border-radius:12px;width:min(640px,100%);box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.mbox h3{margin:0;padding:14px 18px;border-bottom:1px solid var(--line);font-size:15px}
+.mbody{padding:16px 18px}
+.mfoot{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+.f{margin-bottom:12px}
+.f>label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.f .hint{font-size:11.5px;color:var(--dim);margin-top:3px}
+.frow{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.days{display:flex;gap:6px;flex-wrap:wrap}
+.days label{display:flex;align-items:center;gap:4px;background:var(--bg2);border:1px solid var(--line2);border-radius:7px;padding:4px 9px;cursor:pointer;font-size:13px}
+.preview{background:#06090d;border:1px dashed var(--line2);border-radius:8px;padding:10px;font:12px/1.5 var(--mono);color:#9fb0c2;word-break:break-all}
+.note{background:#1a1606;border:1px solid #3d3110;color:#e8d9a6;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:14px}
+
+/* login + toast */
+#login{position:fixed;inset:0;z-index:100;background:radial-gradient(ellipse at top,#1a1406 0%,var(--bg) 55%);display:none;align-items:center;justify-content:center;padding:20px}
+#login.on{display:flex}
+#login .box{width:min(360px,100%);background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:28px}
+#login .logo{justify-content:center;font-size:22px;margin-bottom:20px}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.tm{background:var(--panel2);border:1px solid var(--line2);border-radius:9px;padding:9px 16px;box-shadow:0 8px 30px rgba(0,0,0,.4);font-size:13.5px}
+.tm.err{border-color:var(--bad);color:#fecaca}.tm.okk{border-color:var(--ok)}
+.lvl{display:inline-block;width:46px;font-size:11.5px;text-align:center;border-radius:4px;padding:0 4px;margin-right:6px}
+.lvl.info{background:#10233f;color:#93c5fd}.lvl.warn{background:#3a2a07;color:#fcd34d}.lvl.error{background:#3d1010;color:#fca5a5}
+@media (max-width:700px){.kpis{gap:14px}.hwrap{padding:10px 14px}main{padding:14px 12px 60px}.rig-head{gap:9px}}
+</style>
+</head>
+<body>
+
+<div id="login"><div class="box">
+  <div class="logo"><svg viewBox="0 0 32 32"><path d="M16 2l12 7v14l-12 7-12-7V9z" fill="#f5b301"/><path d="M16 9l6 3.5v7L16 23l-6-3.5v-7z" fill="#0a0e13"/></svg>MinerHub</div>
+  <div class="f"><label>管理员密码</label><input type="password" id="lpw" autofocus></div>
+  <button class="btn primary" style="width:100%" id="lbtn">登录</button>
+  <div class="muted" style="font-size:12px;margin-top:12px;text-align:center">忘记密码：在面板服务器执行 server.py passwd 新密码</div>
+</div></div>
+
+<header>
+  <div class="hwrap">
+    <div class="logo"><svg viewBox="0 0 32 32"><path d="M16 2l12 7v14l-12 7-12-7V9z" fill="#f5b301"/><path d="M16 9l6 3.5v7L16 23l-6-3.5v-7z" fill="#0a0e13"/></svg>MinerHub <small id="ver"></small></div>
+    <div class="chips" id="chips"></div>
+    <span class="muted" style="font-size:12px" id="clock"></span>
+    <button class="btn sm" id="logout">退出</button>
+  </div>
+  <nav id="nav">
+    <a data-tab="rigs" class="on">矿机</a><a data-tab="flights">飞行表</a><a data-tab="ocs">超频</a>
+    <a data-tab="schedules">定时任务</a><a data-tab="events">事件</a><a data-tab="settings">设置</a>
+  </nav>
+</header>
+<main id="main"></main>
+
+<div class="mask" id="mask"></div>
+<aside class="drawer" id="drawer">
+  <div class="dhead" id="dhead"></div>
+  <div class="subtabs" id="dtabs">
+    <a data-d="ov" class="on">概况</a><a data-d="cfg">配置</a><a data-d="chart">曲线</a>
+    <a data-d="log">矿工日志</a><a data-d="term">终端</a><a data-d="ev">事件</a>
+  </div>
+  <div class="dbody" id="dbody"></div>
+</aside>
+
+<div class="modal" id="modal"><div class="mbox">
+  <h3 id="mtitle"></h3><div class="mbody" id="mbody"></div>
+  <div class="mfoot"><button class="btn" id="mcancel">取消</button><button class="btn primary" id="mok">保存</button></div>
+</div></div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const BASE = location.pathname.replace(/[^\/]*$/, '');   // 安全入口：/后缀/ 或 /
+const S = {st:null, tab:'rigs', sel:new Set(), rid:null, dtab:'ov', det:null, hours:24, cfgDirty:false};
+const ACT = {start_miner:'启动挖矿',stop_miner:'停止挖矿',restart_miner:'重启矿工',reboot:'重启系统',shutdown:'关机',wol:'网络唤醒',poweron:'定时开机'};
+const DAYN = ['','一','二','三','四','五','六','日'];
+
+function toast(msg, type){ const d=document.createElement('div'); d.className='tm '+(type||''); d.textContent=msg; $('#toast').appendChild(d); setTimeout(()=>d.remove(), type==='err'?5000:2600); }
+async function api(path, body){
+  const opt = body===undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)};
+  const r = await fetch(BASE+'api/'+path, opt);
+  if (r.status===401){ showLogin(); throw new Error('请先登录'); }
+  const j = await r.json();
+  if (j.ok===false) throw new Error(j.error || '操作失败');
+  return j;
+}
+async function act(path, body, okMsg){ try{ const j=await api(path, body); if(okMsg!==false) toast(j.msg||okMsg||'已完成','okk'); return j; }catch(e){ toast(e.message,'err'); throw e; } }
+
+function fmtHs(v){ if(v==null||isNaN(v)) return '—'; const u=['H/s','KH/s','MH/s','GH/s','TH/s','PH/s']; let i=0; v=+v; while(Math.abs(v)>=1000&&i<u.length-1){v/=1000;i++} return (v>=100?v.toFixed(1):v.toFixed(2))+' '+u[i]; }
+function fmtDur(s){ s=Math.floor(s||0); if(s<=0) return '—'; const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60); return d?`${d}天${h}时`:h?`${h}时${m}分`:`${m}分`; }
+function ago(ts){ if(!ts) return '从未'; const s=Math.floor(Date.now()/1000-ts); return s<60?s+'秒前':s<3600?Math.floor(s/60)+'分钟前':s<86400?Math.floor(s/3600)+'小时前':Math.floor(s/86400)+'天前'; }
+function tm(ts){ const d=new Date(ts*1000); return d.toLocaleString('zh-CN',{hour12:false}); }
+function tcls(t){ return t==null?'':t>=80?'bad':t>=70?'warn':'ok'; }
+function n0(v,suf=''){ return v==null||isNaN(v)?'—':Math.round(v)+suf; }
+const fname = id => (S.st.flights.find(f=>f.id==id)||{}).name;
+const oname = id => (S.st.ocs.find(f=>f.id==id)||{}).name;
+const rname = id => id==='*'?'全部矿机':((S.st.rigs.find(r=>r.id===id)||{}).name||id);
+
+function rigSum(r){
+  const st=r.stats||{}, m=st.miner||{}, g=st.gpus||[];
+  const temps=g.map(x=>x.temp).filter(v=>v!=null);
+  return {m, g, hs:m.hs_total||0, power:g.reduce((a,x)=>a+(x.power||0),0), tmax:temps.length?Math.max(...temps):null,
+    state: !r.online?'off': st.temp_hold?'hot': m.running?((m.hs_total||0)>0?'mining':'zero'):'stopped'};
+}
+const STATE_TXT={off:'离线',hot:'超温停机',mining:'挖矿中',zero:'启动中/零算力',stopped:'已停止'};
+
+/* ---------------------------------------------------------- login */
+function showLogin(){ $('#login').classList.add('on'); setTimeout(()=>$('#lpw').focus(),50); }
+async function doLogin(){
+  try{ await api('login',{password:$('#lpw').value}); $('#login').classList.remove('on'); $('#lpw').value=''; refresh(true); }
+  catch(e){ toast(e.message,'err'); }
+}
+$('#lbtn').onclick=doLogin; $('#lpw').onkeydown=e=>{ if(e.key==='Enter') doLogin(); };
+$('#logout').onclick=async()=>{ await fetch(BASE+'api/logout'); showLogin(); };
+
+/* ---------------------------------------------------------- refresh */
+async function refresh(full){
+  try{ S.st = await api('state'); }catch(e){ return; }
+  renderHeader();
+  if (full || S.tab==='rigs') renderTab();
+  if (S.rid) loadDetail(false);
+}
+function renderHeader(){
+  const st=S.st; $('#ver').textContent='v'+st.version;
+  const on=st.rigs.filter(r=>r.online).length; let gpus=0, pw=0; const algo={};
+  st.rigs.forEach(r=>{ if(!r.online) return; const s=rigSum(r); gpus+=s.g.length; pw+=s.power; if(s.m.algo) algo[s.m.algo]=(algo[s.m.algo]||0)+s.hs; });
+  $('#chips').innerHTML = `<span class="chip">在线<b>${on}/${st.rigs.length}</b></span><span class="chip">GPU<b>${gpus}</b></span><span class="chip">功耗<b>${(pw/1000).toFixed(2)} kW</b></span>`
+    + Object.entries(algo).map(([a,v])=>`<span class="chip hs">${esc(a)}<b>${fmtHs(v)}</b></span>`).join('');
+  $('#clock').textContent = st.local_time;
+}
+$('#nav').onclick=e=>{ const a=e.target.closest('a'); if(!a) return; S.tab=a.dataset.tab; $$('#nav a').forEach(x=>x.classList.toggle('on',x===a)); renderTab(); if(S.tab==='events') loadEvents(); };
+
+function renderTab(){
+  const f={rigs:vRigs,flights:vFlights,ocs:vOcs,schedules:vSched,events:()=>'<div id="evbox" class="tbl"><div class="empty">加载中…</div></div>',settings:vSettings}[S.tab];
+  if (S.tab==='settings' && $('#main').contains(document.activeElement) && document.activeElement.tagName==='INPUT') return;
+  $('#main').innerHTML=f();
+  if (S.tab==='rigs') bindRigs();
+}
+
+/* ---------------------------------------------------------- 矿机列表 */
+function vRigs(){
+  const rigs=S.st.rigs;
+  if(!rigs.length) return `<div class="card empty"><h2>还没有矿机接入</h2><p>在每台 Ubuntu 矿机上执行【设置】页里的一键安装命令，矿机会自动出现在这里。</p><button class="btn primary" onclick="goTab('settings')">查看安装命令</button></div>`;
+  S.sel.forEach(id=>{ if(!rigs.find(r=>r.id===id)) S.sel.delete(id); });
+  const bulk=['start_miner','stop_miner','restart_miner','reboot','shutdown','wol'].map(a=>`<button class="btn sm ${a==='shutdown'||a==='reboot'?'danger':''}" data-bulk="${a}" ${S.sel.size?'':'disabled'}>${ACT[a]}</button>`).join('');
+  return `<div class="toolbar"><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="selAll" ${S.sel.size&&S.sel.size===rigs.length?'checked':''}> 全选</label>
+    <span class="muted">${S.sel.size?'已选 '+S.sel.size+' 台':'勾选矿机可批量操作'}</span><span class="sp"></span>${bulk}</div>
+    <div id="rigList">${rigs.map(rigCard).join('')}</div>`;
+}
+function rigCard(r){
+  const s=rigSum(r), m=s.m;
+  const sub=[r.ip, m.algo?`<span class="tag algo">${esc(m.algo)}</span>`:'', fname(r.flight_id)?`<span class="tag">✈ ${esc(fname(r.flight_id))}</span>`:'<span class="tag">未分配飞行表</span>', oname(r.oc_id)?`<span class="tag">⚙ ${esc(oname(r.oc_id))}</span>`:''].filter(Boolean).join(' ');
+  const kp = r.online ? `<div class="kpis">
+     <div class="kpi"><label>总算力</label><b class="hs">${fmtHs(s.hs)}</b></div>
+     <div class="kpi"><label>功耗</label><b>${n0(s.power,' W')}</b></div>
+     <div class="kpi"><label>最高温</label><b class="${tcls(s.tmax)}">${n0(s.tmax,'°C')}</b></div>
+     <div class="kpi"><label>份额 A / R</label><b>${n0(m.accepted)} <span class="${m.rejected?'bad':'dim'}">/ ${n0(m.rejected)}</span></b></div>
+     <div class="kpi"><label>矿工运行</label><b>${fmtDur(m.uptime)}</b></div></div>`
+   : `<div class="kpis"><div class="kpi"><label>最后在线</label><b>${ago(r.last_seen)}</b></div></div>`;
+  const acts = r.online
+   ? (r.desired==='mining' ? `<button class="btn sm" data-a="stop_miner">■ 停止</button>` : `<button class="btn sm" data-a="start_miner">▶ 挖矿</button>`)
+     + `<button class="btn sm" data-a="restart_miner">↻ 矿工</button><button class="btn sm danger" data-a="reboot">⟲ 重启</button><button class="btn sm danger" data-a="shutdown">⏻ 关机</button>`
+   : `<button class="btn sm" data-a="wol">⚡ 唤醒</button>`;
+  const gp = r.online && s.g.length ? `<div class="gpus">${s.g.map(g=>`<div class="gpu ${m.running&&!g.hs?'nohs':''}">
+     <div class="t"><span>GPU${g.i}</span><span title="${esc(g.name)}">${esc(g.name)}</span></div>
+     <div class="h">${m.running?fmtHs(g.hs):'—'}</div>
+     <div class="m"><span class="${tcls(g.temp)}">${n0(g.temp,'°')}</span><span>${n0(g.fan,'%')}</span><span>${n0(g.power,'W')}</span></div></div>`).join('')}</div>`
+   : (r.online && s.m && r.stats.gpu_error ? `<div class="gpus"><div class="bad" style="grid-column:1/-1">${esc(r.stats.gpu_error)}</div></div>`:'');
+  return `<div class="rig ${r.online?'':'off'}" data-id="${esc(r.id)}">
+    <div class="rig-head"><input type="checkbox" class="sel" ${S.sel.has(r.id)?'checked':''}>
+      <span class="dot ${s.state}" title="${STATE_TXT[s.state]}"></span>
+      <div class="rig-title" data-open><b>${esc(r.name)}</b> <span class="muted" style="font-size:12px">${STATE_TXT[s.state]}</span><small>${sub}</small></div>
+      ${kp}<div class="acts">${acts}<button class="btn sm" data-open>详情</button></div></div>${gp}</div>`;
+}
+function bindRigs(){
+  const sa=$('#selAll'); if(sa) sa.onchange=()=>{ S.sel = sa.checked?new Set(S.st.rigs.map(r=>r.id)):new Set(); renderTab(); };
+  $$('[data-bulk]').forEach(b=>b.onclick=()=>bulk(b.dataset.bulk));
+  const list=$('#rigList'); if(!list) return;
+  list.onclick=e=>{
+    const card=e.target.closest('.rig'); if(!card) return; const id=card.dataset.id;
+    if(e.target.classList.contains('sel')){ e.target.checked?S.sel.add(id):S.sel.delete(id); renderTab(); return; }
+    if(e.target.closest('[data-open]')) return openRig(id);
+    const b=e.target.closest('[data-a]'); if(b) rigCmd(id, b.dataset.a);
+  };
+}
+async function rigCmd(id, a, args){
+  const r=S.st.rigs.find(x=>x.id===id);
+  if((a==='reboot'||a==='shutdown') && !confirm(`确定要对【${r?r.name:id}】执行「${ACT[a]}」？`)) return;
+  const j = await act('rig/'+encodeURIComponent(id)+'/cmd', {action:a, args:args||{}});
+  setTimeout(()=>refresh(), 600); return j;
+}
+async function bulk(a){
+  const ids=[...S.sel]; if(!ids.length) return;
+  if(!confirm(`对选中的 ${ids.length} 台矿机执行「${ACT[a]}」？`)) return;
+  try{ const j=await api('cmd/bulk',{ids,action:a}); const bad=j.results.filter(x=>!x.ok);
+    toast(`已下发 ${ids.length-bad.length} 台`+(bad.length?`，失败 ${bad.length} 台：`+bad.map(x=>rname(x.id)+'('+x.msg+')').join('；'):''), bad.length?'err':'okk'); }catch(e){ toast(e.message,'err'); }
+  setTimeout(()=>refresh(), 600);
+}
+function goTab(t){ $$('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.tab===t)); S.tab=t; renderTab(); }
+
+/* ---------------------------------------------------------- 矿机详情抽屉 */
+function openRig(id){ S.rid=id; S.dtab='ov'; S.cfgDirty=false; $$('#dtabs a').forEach(a=>a.classList.toggle('on',a.dataset.d==='ov')); $('#dbody').innerHTML='<div class="empty">加载中…</div>'; $('#drawer').classList.add('on'); $('#mask').classList.add('on'); loadDetail(true); }
+function closeRig(){ S.rid=null; S.det=null; $('#drawer').classList.remove('on'); $('#mask').classList.remove('on'); }
+$('#mask').onclick=closeRig;
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if($('#modal').classList.contains('on')) closeModal(); else closeRig(); } });
+$('#dtabs').onclick=e=>{ const a=e.target.closest('a'); if(!a) return; S.dtab=a.dataset.d; $$('#dtabs a').forEach(x=>x.classList.toggle('on',x===a)); S.cfgDirty=false; renderDetail(true); };
+async function loadDetail(force){
+  try{ S.det = await api('rig/'+encodeURIComponent(S.rid)+'?hours='+S.hours); }catch(e){ return; }
+  renderDetail(force);
+}
+function renderDetail(force){
+  const d=S.det; if(!d) return; const s=rigSum(d);
+  $('#dhead').innerHTML=`<span class="dot ${s.state}"></span><h3>${esc(d.name)}</h3><span class="muted">${STATE_TXT[s.state]} · ${esc(d.id)}</span><span style="flex:1"></span>
+    ${d.online?(d.desired==='mining'?`<button class="btn sm" onclick="dCmd('stop_miner')">■ 停止挖矿</button>`:`<button class="btn sm" onclick="dCmd('start_miner')">▶ 启动挖矿</button>`)+
+      `<button class="btn sm" onclick="dCmd('restart_miner')">↻ 重启矿工</button><button class="btn sm danger" onclick="dCmd('reboot')">⟲ 重启</button><button class="btn sm danger" onclick="dShutdown()">⏻ 关机</button>`
+      :`<button class="btn sm" onclick="dCmd('wol')">⚡ 网络唤醒</button>`}
+    <button class="btn sm" onclick="closeRig()">✕</button>`;
+  const t=S.dtab;
+  if (!force && (t==='cfg'||t==='log'||t==='term')) return;
+  const box=$('#dbody');
+  if(t==='ov') box.innerHTML=dOverview(d,s);
+  if(t==='cfg'){ box.innerHTML=dConfig(d); bindCfg(d); }
+  if(t==='chart') box.innerHTML=dChart(d);
+  if(t==='log') box.innerHTML=`<div class="toolbar"><button class="btn primary" onclick="fetchLog()">读取最新日志</button><span class="muted">矿工日志：/var/log/minerhub/miner.log（最后 200 行）</span></div><div id="logbox"></div>`;
+  if(t==='term') box.innerHTML=dTerm();
+  if(t==='ev') box.innerHTML=`<div class="tbl">${evTable(d.events)}</div>`;
+}
+function dCmd(a){ rigCmd(S.rid,a).then(()=>setTimeout(()=>loadDetail(false),800)).catch(()=>{}); }
+function dShutdown(){
+  const nw=S.det.cfg&&S.det.cfg.next_wake;
+  openModal('关机', `<div class="f"><label>关机后自动开机时间（写入主板 RTC 闹钟，可留空）</label><input type="datetime-local" id="wakeAt" value="${nw?toLocalInput(nw):''}">
+    <div class="hint">${nw?'已按定时任务预填下一次开机时间。':'没有“定时开机”任务，留空则不会自动开机。'}需 BIOS 支持 RTC 唤醒（大部分主板默认支持）。</div></div>`,
+    async()=>{ const v=$('#wakeAt').value; const args=v?{wake_at:Math.floor(new Date(v).getTime()/1000)}:{}; await act('rig/'+encodeURIComponent(S.rid)+'/cmd',{action:'shutdown',args}); closeModal(); }, '确认关机');
+}
+function toLocalInput(ts){ const d=new Date(ts*1000); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
+function dOverview(d,s){
+  const i=d.info||{}, m=s.m;
+  const kv=[['IP / 网卡',`${d.ip||'—'} ${i.iface?'('+i.iface+')':''}`],['MAC',d.mac||'—'],['系统',i.os],['内核',i.kernel],['NVIDIA 驱动',i.driver||'—'],['CPU',i.cpu],
+    ['内存',i.mem_total?`${(i.mem_total-i.mem_avail)} / ${i.mem_total} MB`:'—'],['磁盘剩余',i.disk_free_gb!=null?i.disk_free_gb+' GB':'—'],['负载',(i.load||[]).join(' ')],['系统运行',fmtDur(i.uptime)],
+    ['Agent',i.agent],['SRBMiner',m.version||'—'],['算法',m.algo||'—'],['矿池',m.pool||'—'],['期望状态',d.desired==='mining'?'挖矿':'停止'],
+    ['下次定时开机',d.cfg&&d.cfg.next_wake?tm(d.cfg.next_wake):'未设置'],['最后心跳',ago(d.last_seen)],['API',m.api_ok?'<span class="ok">正常</span>':(m.running?'<span class="warn">未响应</span>':'—')]];
+  const rows=s.g.map(g=>`<tr><td>GPU${g.i}</td><td>${esc(g.name)}</td><td class="mono">${g.bus!=null?g.bus.toString(16).padStart(2,'0'):'—'}</td><td><b style="color:var(--accent2)">${m.running?fmtHs(g.hs):'—'}</b></td>
+    <td class="${tcls(g.temp)}">${n0(g.temp,'°C')}</td><td>${n0(g.fan,'%')}</td><td>${n0(g.power)} / ${n0(g.plimit,' W')}</td><td>${n0(g.core)}</td><td>${n0(g.mem)}</td><td>${n0(g.util,'%')}</td><td>${g.vram?Math.round(g.vram/1024)+' G':'—'}</td>
+    <td>${g.hs&&g.power?fmtHs(g.hs/g.power).replace('/s','/W'):'—'}</td></tr>`).join('');
+  return `<div class="kv">${kv.map(([k,v])=>`<div><label>${k}</label><span title="${esc(String(v??'').replace(/<[^>]+>/g,''))}">${typeof v==='string'&&v.startsWith('<span')?v:esc(v??'—')}</span></div>`).join('')}</div>
+    <div class="tbl"><table><tr><th>#</th><th>型号</th><th>总线</th><th>算力</th><th>温度</th><th>风扇</th><th>功耗/功耗墙</th><th>核心 MHz</th><th>显存 MHz</th><th>利用率</th><th>显存</th><th>能效</th></tr>${rows||'<tr><td colspan="12" class="muted">无 GPU 数据'+(d.stats&&d.stats.gpu_error?'：'+esc(d.stats.gpu_error):'')+'</td></tr>'}
+    ${s.g.length?`<tr><td colspan="3"><b>合计</b></td><td><b style="color:var(--accent2)">${fmtHs(s.hs)}</b></td><td></td><td></td><td><b>${n0(s.power,' W')}</b></td><td colspan="5"></td></tr>`:''}</table></div>`;
+}
+function dConfig(d){
+  const fo=['<option value="">（不分配）</option>'].concat(S.st.flights.map(f=>`<option value="${f.id}" ${f.id==d.flight_id?'selected':''}>${esc(f.name)} · ${esc(f.algorithm)}</option>`)).join('');
+  const oo=['<option value="">（不超频 / 默认）</option>'].concat(S.st.ocs.map(f=>`<option value="${f.id}" ${f.id==d.oc_id?'selected':''}>${esc(f.name)}</option>`)).join('');
+  return `<div class="grid2"><div class="card">
+    <div class="f"><label>矿机名称</label><input id="c_name" value="${esc(d.name)}"></div>
+    <div class="f"><label>飞行表（算法/矿池/钱包）</label><select id="c_fl">${fo}</select></div>
+    <div class="f"><label>超频配置</label><select id="c_oc">${oo}</select></div>
+    <div class="f"><label>备注</label><input id="c_notes" value="${esc(d.notes||'')}" placeholder="例如：机架 A 第 2 层"></div>
+    <div class="toolbar"><button class="btn primary" id="c_save">保存并应用</button><span class="muted" style="font-size:12px">保存后下一次心跳（≤10 秒）矿工自动重启应用</span></div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+    <button class="btn sm danger" id="c_del">从面板移除这台矿机</button></div>
+    <div class="card"><h2 style="margin-bottom:8px">将生成的 SRBMiner 启动命令</h2><div class="preview" id="c_prev"></div><div id="c_ocmap"></div>
+    <div class="hint muted" style="font-size:12px;margin-top:8px">超频参数由 SRBMiner 通过 NVML 直接写入显卡，无需桌面环境（headless 可用）。单个值 = 所有卡相同；多个值用空格或逗号分隔（和 HiveOS 一样），按 GPU0、GPU1… 顺序对应。</div></div></div>`;
+}
+function splitOc(v){ return String(v||'').trim().split(/[\s,，;；|/]+/).filter(x=>x!==''); }
+function ocPerGpu(oc, gpus){
+  if(!oc||!gpus.length) return '';
+  const cols=[['cclock','核心锁频'],['mclock','显存锁频'],['coffset','核心偏移'],['moffset','显存偏移'],['plimit','功耗墙 W'],['fan','风扇 %']].filter(([k])=>splitOc(oc[k]).length);
+  if(!cols.length) return '';
+  const pick=(k,i)=>{ const p=splitOc(oc[k]); return p.length?(p[Math.min(i,p.length-1)]):'—'; };
+  const warn=cols.filter(([k])=>{ const n=splitOc(oc[k]).length; return n>1&&n!==gpus.length; }).map(([k,l])=>`${l} 填了 ${splitOc(oc[k]).length} 个值，这台有 ${gpus.length} 张卡`);
+  return `<h2 style="margin:16px 0 8px">每张卡实际会用的超频</h2>${warn.length?`<div class="hint warn" style="margin-bottom:6px">⚠ ${warn.join('；')}（不足的用最后一个值补齐，多余的忽略）</div>`:''}
+    <div class="tbl"><table><tr><th>GPU</th><th>型号</th>${cols.map(c=>`<th>${c[1]}</th>`).join('')}</tr>
+    ${gpus.map((g,i)=>`<tr><td>GPU${g.i}</td><td>${esc(g.name)}</td>${cols.map(([k])=>`<td class="mono">${esc(pick(k,i))}</td>`).join('')}</tr>`).join('')}</table></div>`;
+}
+function buildArgs(fl, oc, ngpu, rig){
+  if(!fl) return null;
+  const a=['--disable-cpu','--algorithm',fl.algorithm,'--pool',fl.pool,'--wallet',String(fl.wallet).replace(/%RIG%/g,rig),'--api-enable','--api-port','21550','--api-rig-name',rig];
+  const w=String(fl.worker||'').replace(/%RIG%/g,rig).trim(); if(w) a.push('--worker',w);
+  if(fl.password) a.push('--password',fl.password); if(+fl.tls) a.push('--tls','true'); if(fl.tls_cert) a.push('--tls-cert-sha256',fl.tls_cert);
+  const ex=(v)=>{ const p=splitOc(v); if(!p.length||!ngpu) return null; let q=p.length===1?Array(ngpu).fill(p[0]):p.concat(Array(Math.max(0,ngpu-p.length)).fill(p[p.length-1])); return q.slice(0,ngpu).join(','); };
+  if(oc){ if(+oc.reset) a.push('--gpu-reset-oc'); const o=[]; [['cclock','--gpu-cclock0'],['mclock','--gpu-mclock0'],['coffset','--gpu-coffset0'],['moffset','--gpu-moffset0'],['plimit','--gpu-plimit0'],['fan','--gpu-fan0']].forEach(([k,f])=>{ const v=ex(oc[k]); if(v) o.push(f,v); });
+    if(o.length) a.push('--gpu-id',[...Array(ngpu).keys()].join(','),...o); if(oc.extra) a.push(oc.extra); } else a.push('--gpu-reset-oc');
+  if(fl.extra) a.push(fl.extra);
+  return (fl.miner==='ldminer'?'ldminer ':'SRBMiner-MULTI ')+a.join(' ');
+}
+function bindCfg(d){
+  const prev=()=>{ const fl=S.st.flights.find(f=>f.id==$('#c_fl').value), oc=S.st.ocs.find(f=>f.id==$('#c_oc').value);
+    const n=(d.stats.gpus||[]).length||8; $('#c_prev').textContent=buildArgs(fl,oc,n,d.id)||'（未分配飞行表，矿工不会启动）'; $('#c_ocmap').innerHTML=ocPerGpu(oc,d.stats.gpus||[]); };
+  ['#c_fl','#c_oc'].forEach(s=>$(s).onchange=prev); prev();
+  $('#c_save').onclick=async()=>{ await act('rig/'+encodeURIComponent(d.id)+'/save',{name:$('#c_name').value,flight_id:$('#c_fl').value,oc_id:$('#c_oc').value,notes:$('#c_notes').value},'已保存'); refresh(); loadDetail(false); };
+  $('#c_del').onclick=async()=>{ if(!confirm('从面板移除？矿机上的 Agent 若还在运行，下次心跳会重新出现。')) return; await act('rig/'+encodeURIComponent(d.id)+'/delete',{},'已移除'); closeRig(); refresh(true); };
+}
+function svgChart(pts, key, color, fmt, title){
+  const W=900,H=180,P=46; const v=pts.map(p=>p[key]).filter(x=>x!=null);
+  if(pts.length<2||!v.length) return `<div class="chart"><h4>${title}</h4><div class="muted" style="padding:40px 0;text-align:center">数据不足（每分钟采样一次）</div></div>`;
+  let mx=Math.max(...v), mn=Math.min(0,...v); if(mx===mn) mx=mn+1;
+  const t0=pts[0].ts, t1=pts[pts.length-1].ts||t0+1; const X=t=>P+(t-t0)/(t1-t0||1)*(W-P-10), Y=y=>H-22-(y-mn)/(mx-mn)*(H-36);
+  let path='', seg=false;
+  pts.forEach((p,i)=>{ const y=p[key]; const gap=i>0&&p.ts-pts[i-1].ts>300; if(y==null||gap){seg=false; if(y==null) return;} path+=(seg?'L':'M')+X(p.ts).toFixed(1)+' '+Y(y).toFixed(1); seg=true; });
+  const grid=[0,.5,1].map(f=>{ const y=mn+(mx-mn)*f; return `<line x1="${P}" x2="${W-10}" y1="${Y(y)}" y2="${Y(y)}" stroke="#222d3a"/><text x="${P-6}" y="${Y(y)+4}" fill="#7f8c9c" font-size="11" text-anchor="end">${fmt(y)}</text>`; }).join('');
+  const xt=[0,.25,.5,.75,1].map(f=>{ const t=t0+(t1-t0)*f; const d=new Date(t*1000); const lab=(S.hours>24?(d.getMonth()+1)+'/'+d.getDate()+' ':'')+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); return `<text x="${X(t)}" y="${H-4}" fill="#7f8c9c" font-size="11" text-anchor="middle">${lab}</text>`; }).join('');
+  const avg=v.reduce((a,b)=>a+b,0)/v.length;
+  return `<div class="chart"><h4>${title} <span style="float:right">平均 ${fmt(avg)} · 最高 ${fmt(Math.max(...v))}</span></h4><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}${xt}<path d="${path}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>`;
+}
+function dChart(d){
+  const sel=[6,24,72,168].map(h=>`<button class="btn sm ${S.hours===h?'primary':''}" onclick="S.hours=${h};loadDetail(true)">${h<48?h+' 小时':h/24+' 天'}</button>`).join('');
+  const h=d.history||[];
+  return `<div class="toolbar">${sel}</div>`+svgChart(h,'hs','#f5b301',fmtHs,'总算力')+svgChart(h,'tmax','#ef4444',v=>Math.round(v)+'°C','最高 GPU 温度')+svgChart(h,'power','#3b82f6',v=>Math.round(v)+' W','整机 GPU 功耗');
+}
+async function waitCmd(id, box){
+  for(let i=0;i<90;i++){ await new Promise(r=>setTimeout(r,1500)); const j=await api('cmd/'+id); const c=j.cmd;
+    if(c.status==='done'||c.status==='failed') return c; if(c.status==='expired'){ box.textContent='指令超时，矿机未响应'; return null; } box.textContent='等待矿机执行… '+(i+1)*1.5+'s'; }
+  return null;
+}
+async function fetchLog(){
+  const box=$('#logbox'); box.innerHTML='<pre class="out">下发中…</pre>'; const pre=box.firstChild;
+  try{ const j=await api('rig/'+encodeURIComponent(S.rid)+'/cmd',{action:'get_log'}); const c=await waitCmd(j.cmd_id, pre); if(!c) return;
+    let r={}; try{ r=JSON.parse(c.result); }catch(e){ r={log:c.result}; }
+    box.innerHTML=`<pre class="out" id="lg">${esc(r.log||'(空)')}</pre><details style="margin-top:12px"><summary class="muted" style="cursor:pointer">SRBMiner API 原始 JSON（排查用）</summary><pre class="out">${esc(JSON.stringify(r.api,null,2))}</pre></details>`;
+    const lg=$('#lg'); lg.scrollTop=lg.scrollHeight;
+  }catch(e){ pre.textContent=e.message; }
+}
+function dTerm(){
+  const quick=['nvidia-smi','free -m','df -h /','journalctl -u minerhub-agent -n 60 --no-pager','sensors','ip -4 addr','uptime'];
+  return `<div class="note">以 root 身份在矿机上执行命令（超时 120 秒）。请谨慎使用。</div>
+  <div class="toolbar"><input id="tcmd" class="mono" placeholder="例如：nvidia-smi" style="flex:1;min-width:220px"><button class="btn primary" onclick="runShell()">执行</button></div>
+  <div class="toolbar">${quick.map(q=>`<button class="btn sm mono" onclick="$('#tcmd').value=this.textContent;runShell()">${esc(q)}</button>`).join('')}</div><div id="tout"></div>`;
+}
+async function runShell(){
+  const cmd=$('#tcmd').value.trim(); if(!cmd) return; const box=$('#tout'); box.innerHTML='<pre class="out">下发中…</pre>'; const pre=box.firstChild;
+  try{ const j=await api('rig/'+encodeURIComponent(S.rid)+'/cmd',{action:'shell',args:{cmd}}); const c=await waitCmd(j.cmd_id, pre); if(c) pre.textContent=c.result||'(无输出)'; }catch(e){ pre.textContent=e.message; }
+}
+document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.id==='tcmd') runShell(); });
+
+/* ---------------------------------------------------------- 弹窗 */
+let mHandler=null;
+function openModal(title, html, onOk, okText){ $('#mtitle').textContent=title; $('#mbody').innerHTML=html; $('#mok').textContent=okText||'保存'; mHandler=onOk; $('#modal').classList.add('on'); }
+function closeModal(){ $('#modal').classList.remove('on'); mHandler=null; }
+$('#mcancel').onclick=closeModal; $('#modal').onclick=e=>{ if(e.target.id==='modal') closeModal(); };
+$('#mok').onclick=async()=>{ if(!mHandler) return; $('#mok').disabled=true; try{ await mHandler(); }catch(e){} $('#mok').disabled=false; };
+const val=id=>{ const e=$('#'+id); return e.type==='checkbox'?(e.checked?1:0):e.value.trim(); };
+
+/* ---------------------------------------------------------- 飞行表 */
+function vFlights(){
+  const used=id=>S.st.rigs.filter(r=>r.flight_id==id).length;
+  const rows=S.st.flights.map(f=>`<tr><td><b>${esc(f.name)}</b></td><td><span class="tag algo">${esc(f.algorithm)}</span> <span class="tag">${f.miner==='ldminer'?'LDMiner':'SRBMiner'}</span></td><td class="wrap mono">${esc(f.pool)}</td><td class="wrap mono" title="${esc(f.wallet)}">${esc(f.wallet)}</td><td class="mono">${esc(f.worker)}</td><td>${used(f.id)} 台</td>
+    <td style="white-space:nowrap"><button class="btn sm" onclick="editFlight(${f.id})">编辑</button> <button class="btn sm" onclick="editFlight(${f.id},true)">复制</button> <button class="btn sm danger" onclick="delRow('flight',${f.id},'${esc(f.name)}')">删除</button></td></tr>`).join('');
+  return `<div class="toolbar"><h2>飞行表</h2><span class="muted">= 挖什么币、去哪个矿池、打到哪个钱包</span><span class="sp"></span><button class="btn primary" onclick="editFlight()">＋ 新建飞行表</button></div>
+   <div class="tbl"><table><tr><th>名称</th><th>算法</th><th>矿池</th><th>钱包</th><th>矿工名</th><th>使用</th><th></th></tr>${rows||'<tr><td colspan="7" class="empty">还没有飞行表，先建一个</td></tr>'}</table></div>`;
+}
+const FL_TPL={
+  qtc_kryptex_ld:{name:'Quantus · Kryptex · LDMiner',miner:'ldminer',algorithm:'quantus',pool:'qtc.kryptex.network:7049',worker:'%RIG%'},
+  qtc_kryptex:{name:'Quantus · Kryptex',algorithm:'quantus',pool:'qtc.kryptex.network:7049',worker:'%RIG%'},
+  qtc_lucky:{name:'Quantus · LuckyPool',algorithm:'quantus',pool:'eu.lproute.com:5660',worker:'%RIG%'},
+  prl_kryptex:{name:'Pearl · Kryptex',algorithm:'pearlhash',pool:'prl.kryptex.network:7048',worker:'',wallet:'你的PRL钱包地址.%RIG%'},
+};
+function editFlight(id, copy){
+  const f=Object.assign({worker:'%RIG%',tls:0}, id?S.st.flights.find(x=>x.id===id):{});
+  if(copy){ delete f.id; f.name+=' 副本'; }
+  openModal(id&&!copy?'编辑飞行表':'新建飞行表', `
+    ${id?'':`<div class="toolbar"><span class="muted">快速模板：</span>${Object.entries(FL_TPL).map(([k,t])=>`<button class="btn sm" onclick="fillTpl('${k}')">${t.name}</button>`).join('')}</div>`}
+    <div class="frow"><div class="f"><label>名称</label><input id="f_name" value="${esc(f.name)}"></div>
+    <div class="f"><label>矿工程序</label><select id="f_miner"><option value="srbminer" ${f.miner!=='ldminer'?'selected':''}>SRBMiner-MULTI（有开发费）</option><option value="ldminer" ${f.miner==='ldminer'?'selected':''}>LDMiner（0 抽水，仅 Quantus）</option></select></div></div>
+    <div class="frow">
+    <div class="f"><label>算法 --algorithm</label><input id="f_algorithm" list="algos" value="${esc(f.algorithm)}" placeholder="quantus / pearlhash"><datalist id="algos"><option value="quantus"><option value="pearlhash"></datalist></div></div>
+    <div class="f"><label>矿池 --pool</label><input id="f_pool" class="mono" value="${esc(f.pool)}" placeholder="host:port"></div>
+    <div class="f"><label>钱包 --wallet</label><input id="f_wallet" class="mono" value="${esc(f.wallet)}"><div class="hint">可用 %RIG% 代表矿机名，例如 钱包地址.%RIG%</div></div>
+    <div class="frow"><div class="f"><label>矿工名 --worker</label><input id="f_worker" class="mono" value="${esc(f.worker)}"><div class="hint">%RIG% = 矿机名；矿池要求写在钱包后面就留空</div></div>
+    <div class="f"><label>密码 --password</label><input id="f_password" class="mono" value="${esc(f.password)}" placeholder="可留空"></div></div>
+    <div class="f"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="f_tls" ${+f.tls?'checked':''}> 使用 TLS（--tls true）</label></div>
+    <div class="f"><label>QUIC 证书指纹 --tls-cert-sha256（仅 Quantus QUIC 矿池/节点需要）</label><input id="f_tls_cert" class="mono" value="${esc(f.tls_cert)}"></div>
+    <div class="f"><label>额外参数</label><input id="f_extra" class="mono" value="${esc(f.extra)}" placeholder="例如：--gpu-intensity 30 或 --pearl-k2 0,1,2"></div>`,
+    async()=>{ const b={id:f.id}; ['name','miner','algorithm','pool','wallet','worker','password','tls','tls_cert','extra'].forEach(k=>b[k]=val('f_'+k)); await act('flight/save',b,'已保存'); closeModal(); refresh(true); });
+}
+function fillTpl(k){ const t=FL_TPL[k]; Object.entries(t).forEach(([f,v])=>{ const e=$('#f_'+f); if(e) e.value=v; }); if(!t.wallet) $('#f_wallet').value=''; $('#f_wallet').focus(); }
+async function delRow(kind,id,name){ if(!confirm(`删除「${name}」？`)) return; await act(kind+'/'+id+'/delete',{},'已删除'); refresh(true); }
+
+/* ---------------------------------------------------------- 超频 */
+function vOcs(){
+  const used=id=>S.st.rigs.filter(r=>r.oc_id==id).length;
+  const c=v=>v?esc(v):'<span class="dim">—</span>';
+  const rows=S.st.ocs.map(o=>`<tr><td><b>${esc(o.name)}</b></td><td>${c(o.cclock)}</td><td>${c(o.mclock)}</td><td>${c(o.coffset)}</td><td>${c(o.moffset)}</td><td>${c(o.plimit)}</td><td>${c(o.fan)}</td><td>${used(o.id)} 台</td>
+    <td style="white-space:nowrap"><button class="btn sm" onclick="editOc(${o.id})">编辑</button> <button class="btn sm" onclick="editOc(${o.id},true)">复制</button> <button class="btn sm danger" onclick="delRow('oc',${o.id},'${esc(o.name)}')">删除</button></td></tr>`).join('');
+  return `<div class="toolbar"><h2>超频配置</h2><span class="muted">NVIDIA，通过 SRBMiner 内置 OC 写入（headless 可用）</span><span class="sp"></span><button class="btn primary" onclick="editOc()">＋ 新建超频</button></div>
+   <div class="tbl"><table><tr><th>名称</th><th>核心锁频</th><th>显存锁频</th><th>核心偏移</th><th>显存偏移</th><th>功耗墙 W</th><th>风扇 %</th><th>使用</th><th></th></tr>${rows||'<tr><td colspan="9" class="empty">还没有超频配置</td></tr>'}</table></div>
+   <div class="note" style="margin-top:14px">填写规则：单个数字 = 整台矿机所有卡相同；多个值用<b>空格或逗号</b>分隔（直接粘贴 HiveOS 的写法即可，如 <span class="mono">1680 1560 1560</span>），按 GPU0、GPU1… 的顺序对应，顺序与面板显示一致（按 PCI 插槽）；数量不够时用最后一个值补齐。留空 = 不设置该项。<br>
+   建议优先用「锁频 + 功耗墙」，Linux 下比偏移量更稳定。改完后在矿机【详情 → 曲线】里观察算力和功耗，逐步微调。</div>`;
+}
+function editOc(id, copy){
+  const o=Object.assign({reset:1}, id?S.st.ocs.find(x=>x.id===id):{});
+  if(copy){ delete o.id; o.name+=' 副本'; }
+  const fld=(k,l,h)=>`<div class="f"><label>${l}</label><input id="o_${k}" class="mono" value="${esc(o[k])}" placeholder="${h||''}"></div>`;
+  openModal(id&&!copy?'编辑超频':'新建超频', `
+    ${id?'':`<div class="toolbar"><span class="muted">参考：</span><button class="btn sm" onclick="$('#o_name').value='Quantus 显存降频';$('#o_mclock').value='810'">Quantus：显存锁 810（SRBMiner 作者建议）</button></div>`}
+    <div class="f"><label>名称</label><input id="o_name" value="${esc(o.name)}" placeholder="例如：3060-12G Pearl"></div>
+    <div class="frow">${fld('cclock','核心锁频 MHz','如 1500 或 1680 1560 1560')}${fld('mclock','显存锁频 MHz','如 810')}</div>
+    <div class="frow">${fld('coffset','核心偏移 MHz','如 -200')}${fld('moffset','显存偏移 MHz','如 1000')}</div>
+    <div class="frow">${fld('plimit','功耗墙 W','如 120')}${fld('fan','风扇 %','如 70，留空=自动')}</div>
+    <div class="f"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="o_reset" ${+o.reset?'checked':''}> 启动矿工时先重置为默认值（--gpu-reset-oc，推荐）</label></div>
+    <div class="f"><label>额外 OC 参数</label><input id="o_extra" class="mono" value="${esc(o.extra)}" placeholder="例如 --oc-delay 5"></div>`,
+    async()=>{ const b={id:o.id}; ['name','cclock','mclock','coffset','moffset','plimit','fan','reset','extra'].forEach(k=>b[k]=val('o_'+k)); if(!b.name) return toast('请填写名称','err'); await act('oc/save',b,'已保存'); closeModal(); refresh(true); });
+}
+
+/* ---------------------------------------------------------- 定时任务 */
+function vSched(){
+  const rows=S.st.schedules.map(s=>`<tr><td><b class="mono">${esc(s.at)}</b></td><td>${(s.days||'').length===7?'每天':[...s.days].map(d=>'周'+DAYN[d]).join(' ')}</td><td>${ACT[s.action]||s.action}</td><td>${esc(rname(s.target))}</td><td>${esc(s.note||'')}</td>
+    <td>${+s.enabled?'<span class="ok">启用</span>':'<span class="dim">停用</span>'}</td><td class="muted">${esc(s.last_fire||'—')}</td>
+    <td style="white-space:nowrap"><button class="btn sm" onclick="editSched(${s.id})">编辑</button> <button class="btn sm danger" onclick="delRow('schedule',${s.id},'${esc(s.at)} ${ACT[s.action]}')">删除</button></td></tr>`).join('');
+  return `<div class="toolbar"><h2>定时任务</h2><span class="muted">时区：${esc(S.st.settings.tz)}</span><span class="sp"></span>
+    <button class="btn" onclick="tplDaytime()">⚡ 模板：白天挖矿（开机 + 关机）</button><button class="btn primary" onclick="editSched()">＋ 新建任务</button></div>
+   <div class="tbl"><table><tr><th>时间</th><th>重复</th><th>动作</th><th>目标</th><th>备注</th><th>状态</th><th>上次执行</th><th></th></tr>${rows||'<tr><td colspan="8" class="empty">还没有定时任务</td></tr>'}</table></div>
+   <div class="note" style="margin-top:14px"><b>定时开机原理：</b>机器关机后 Agent 不在运行，所以“开机”靠两层保障：① 面板把下一次开机时间提前下发，矿机用 <span class="mono">rtcwake</span> 写进主板 RTC 闹钟，到点主板自己通电（主方案，不依赖网络）；② 到点时面板再让同一局域网里另一台在线矿机发 WOL 唤醒包（兜底）。<br>
+   如果 BIOS 里已经设置了“定时开机”，两者可以并存。少数主板需在 BIOS 中开启 <span class="mono">Resume by RTC Alarm / Wake on RTC</span>（设为 By OS）和 <span class="mono">Wake on LAN</span>。</div>`;
+}
+function editSched(id){
+  const s=Object.assign({target:'*',action:'start_miner',at:'08:00',days:'1234567',enabled:1}, id?S.st.schedules.find(x=>x.id===id):{});
+  const ro=['<option value="*">全部矿机</option>'].concat(S.st.rigs.map(r=>`<option value="${esc(r.id)}" ${r.id===s.target?'selected':''}>${esc(r.name)}</option>`)).join('');
+  const ao=['poweron','shutdown','start_miner','stop_miner','restart_miner','reboot'].map(a=>`<option value="${a}" ${a===s.action?'selected':''}>${ACT[a]}</option>`).join('');
+  openModal(id?'编辑定时任务':'新建定时任务', `
+    <div class="frow"><div class="f"><label>时间（${esc(S.st.settings.tz)}）</label><input type="time" id="s_at" value="${esc(s.at)}"></div>
+    <div class="f"><label>动作</label><select id="s_action">${ao}</select></div></div>
+    <div class="f"><label>目标</label><select id="s_target">${ro}</select></div>
+    <div class="f"><label>重复</label><div class="days">${[1,2,3,4,5,6,7].map(d=>`<label><input type="checkbox" class="sday" value="${d}" ${(s.days||'').includes(d)?'checked':''}>周${DAYN[d]}</label>`).join('')}</div></div>
+    <div class="f"><label>备注</label><input id="s_note" value="${esc(s.note||'')}"></div>
+    <div class="f"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="s_enabled" ${+s.enabled?'checked':''}> 启用</label></div>`,
+    async()=>{ const days=$$('.sday').filter(c=>c.checked).map(c=>c.value).join(''); if(!days) return toast('至少选一天','err');
+      await act('schedule/save',{id:s.id,at:val('s_at'),action:val('s_action'),target:val('s_target'),days,note:val('s_note'),enabled:val('s_enabled')},'已保存'); closeModal(); refresh(true); });
+}
+function tplDaytime(){
+  openModal('模板：白天挖矿', `<div class="frow"><div class="f"><label>开机时间</label><input type="time" id="t_on" value="11:00"></div><div class="f"><label>关机时间</label><input type="time" id="t_off" value="18:00"></div></div>
+    <div class="hint muted">将为【全部矿机】创建“每天开机 + 每天关机”两条任务。矿机开机后会按“期望状态”自动恢复挖矿。</div>`,
+    async()=>{ await api('schedule/save',{at:val('t_on'),action:'poweron',target:'*',days:'1234567',enabled:1,note:'白天挖矿'}); await api('schedule/save',{at:val('t_off'),action:'shutdown',target:'*',days:'1234567',enabled:1,note:'白天挖矿'}); toast('已创建','okk'); closeModal(); refresh(true); }, '创建');
+}
+
+/* ---------------------------------------------------------- 事件 */
+function evTable(evs, withRig){
+  if(!evs||!evs.length) return '<div class="empty">暂无事件</div>';
+  return `<table>${evs.map(e=>`<tr><td class="muted" style="white-space:nowrap;width:150px">${tm(e.ts)}</td>${withRig?`<td style="white-space:nowrap">${esc(e.rig_name||e.rig_id||'—')}</td>`:''}<td><span class="lvl ${esc(e.level)}">${{info:'信息',warn:'警告',error:'严重'}[e.level]||e.level}</span>${esc(e.msg)}</td></tr>`).join('')}</table>`;
+}
+async function loadEvents(){ try{ const j=await api('events'); const b=$('#evbox'); if(b) b.innerHTML=evTable(j.events,true); }catch(e){} }
+
+/* ---------------------------------------------------------- 设置 */
+function vSettings(){
+  const s=S.st.settings, url=(s.public_url||location.origin).replace(/\/$/,'');
+  const cmd=`curl -fsSL ${url}/dl/install-agent.sh | sudo bash -s -- ${url} ${s.farm_key}`;
+  const inp=(k,l,h,t)=>`<div class="f"><label>${l}</label><input id="g_${k}" type="${t||'text'}" value="${esc(s[k])}">${h?`<div class="hint">${h}</div>`:''}</div>`;
+  return `<div class="grid2">
+   <div class="card" style="grid-column:1/-1"><h2>添加矿机</h2><p class="muted">在每台 Ubuntu 矿机上用 root 执行下面这一行（自动装 SRBMiner + Agent + 开机自启）。末尾可再加一个矿机名，不加则用主机名。</p>
+     <div class="preview" id="icmd">${esc(cmd)}</div>
+     <div class="toolbar" style="margin-top:10px"><button class="btn primary" onclick="copyCmd()">复制命令</button><button class="btn danger" onclick="rotateKey()">更换 Farm Key</button><span class="muted" style="font-size:12px">更换后所有矿机需重新执行安装命令</span></div></div>
+   <div class="card"><h2 style="margin-bottom:12px">基础</h2>
+     ${inp('tz','时区（定时任务按此时区执行）','例如 Asia/Shanghai、America/New_York')}
+     ${inp('public_url','面板对外地址（生成安装命令用）','矿机访问面板用的地址，如 http://192.168.1.10:8800 或 https://miner.你的域名.com；留空=当前浏览器地址')}
+     <button class="btn primary" onclick="saveSet(['tz','public_url'])">保存</button></div>
+   <div class="card"><h2 style="margin-bottom:12px">安全入口</h2>
+     <div class="f"><label>面板地址后缀</label><input id="g_entrance" class="mono" value="${esc(s.entrance||'')}" placeholder="例如 a7k2m9x4q1，留空 = 关闭">
+       <div class="hint">设置后面板只能通过 <span class="mono">${esc(location.origin)}/后缀/</span> 打开，其它地址一律 404，扫描器找不到登录页。矿机上报和安装命令不受影响。</div></div>
+     <div class="toolbar"><button class="btn primary" onclick="saveEntrance()">保存</button><button class="btn" onclick="$('#g_entrance').value=Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b=>b.toString(36).padStart(2,'0')).join('').slice(0,14)">随机生成</button></div>
+     <div class="hint">当前地址：<span class="mono">${esc(location.origin+BASE)}</span>　忘记后缀：在服务器执行 <span class="mono">python3 /opt/minerhub-server/server.py info</span></div></div>
+   <div class="card"><h2 style="margin-bottom:12px">看门狗 / 保护</h2>
+     <div class="frow">${inp('temp_crit','超温停机 °C','任一卡达到即停止挖矿','number')}${inp('temp_resume','恢复温度 °C','降到以下自动恢复','number')}</div>
+     <div class="frow">${inp('wd_zero_min','零算力 N 分钟重启矿工','','number')}${inp('wd_max_restarts','1 小时内重启矿工 N 次后重启系统','','number')}</div>
+     <div class="f"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="g_wd_reboot" ${s.wd_reboot==='1'?'checked':''}> 允许看门狗自动重启系统（零算力 / 掉卡，每台每天最多 3 次）</label></div>
+     <button class="btn primary" onclick="saveSet(['temp_crit','temp_resume','wd_zero_min','wd_max_restarts','wd_reboot'])">保存</button></div>
+   ${vTelegram(s, inp)}
+   <div class="card"><h2 style="margin-bottom:12px">修改管理员密码</h2>
+     <div class="f"><label>新密码（至少 6 位）</label><input id="g_pw" type="password"></div>
+     <button class="btn primary" onclick="changePw()">修改</button></div></div>`;
+}
+const TG_EV=[['alert_offline','矿机意外离线','计划内关机/重启不报；恢复在线时再通知'],['tg_ev_online','恢复在线 / 新矿机接入',''],
+  ['tg_ev_temp','超温停机 / 降温恢复',''],['tg_ev_gpu','掉卡 / 单卡算力为 0','某张卡 5 分钟没算力'],['tg_ev_watchdog','看门狗动作 / 矿工崩溃','自动重启矿工、重启系统'],
+  ['tg_ev_hsdrop','算力明显下降','近 5 分钟比之前 1 小时平均低于设定比例'],['tg_ev_sched','定时任务结果','执行了几台；定时开机 6 分钟后检查是否全部上线'],['tg_ev_other','其它警告','']];
+const TG_KEYS=['tg_token','tg_chat','tg_api',...TG_EV.map(e=>e[0]),'hs_drop_pct','tg_daily','tg_daily_at','tg_report_hours','tg_bot_cmds'];
+function vTelegram(s, inp){
+  const chk=(k,l,hint)=>`<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;cursor:pointer"><input type="checkbox" id="g_${k}" ${s[k]==='1'?'checked':''} style="margin-top:3px"><span>${l}${hint?`<br><span class="dim" style="font-size:12px">${hint}</span>`:''}</span></label>`;
+  setTimeout(loadTgInfo, 50);
+  return `<div class="card" style="grid-column:1/-1"><div class="toolbar" style="margin-bottom:6px"><h2>Telegram 通知 / 机器人</h2><span id="tgState" class="muted" style="font-size:12.5px"></span></div>
+   <div class="grid2">
+    <div>
+     <div class="note" style="font-size:12.5px">① Telegram 里找 <b>@BotFather</b> 发 <span class="mono">/newbot</span>，拿到 Bot Token 填下面并保存<br>② 打开你的机器人点 <b>Start</b>（或把它拉进群发 <span class="mono">/start</span>）<br>③ 点「获取 Chat ID」自动填入 → 保存 → 发送测试</div>
+     ${inp('tg_token','Bot Token','形如 123456789:AAH...')}
+     <div class="f"><label>Chat ID</label><div class="toolbar" style="margin:0;flex-wrap:nowrap"><input id="g_tg_chat" value="${esc(s.tg_chat)}" placeholder="个人是正数，群组是 -100 开头"><button class="btn" onclick="detectChat()">获取 Chat ID</button></div><div id="tgChats"></div></div>
+     ${inp('tg_api','API 地址（可选）','留空 = https://api.telegram.org；服务器访问不了 Telegram 时可填反代地址')}
+     <div class="frow"><div class="f"><label>每日日报</label>${chk('tg_daily','每天推送日报','平均算力、挖矿时长、耗电、最高温、警告数')}<input id="g_tg_daily_at" type="time" value="${esc(s.tg_daily_at||'09:00')}"></div>
+      <div class="f"><label>定时播报矿场状态</label><input id="g_tg_report_hours" type="number" min="0" value="${esc(s.tg_report_hours||'0')}"><div class="hint">每 N 小时推送一次状态，0 = 关闭</div></div></div>
+    </div>
+    <div>
+     <div class="f"><label>推送哪些通知</label>${TG_EV.map(e=>chk(...e)).join('')}</div>
+     <div class="f"><label>算力下降报警阈值 %</label><input id="g_hs_drop_pct" type="number" min="5" max="95" value="${esc(s.hs_drop_pct||'30')}"></div>
+     ${chk('tg_bot_cmds','允许机器人命令（查状态 / 启停 / 重启 / 关机）','只响应上面 Chat ID 的会话；重启和关机需在 Telegram 里二次确认')}
+     <div class="dim mono" style="font-size:12px;line-height:1.7">/status /rig 名字 /report /mine /stop /restart /reboot /shutdown /wake（名字或 all）/mute 小时 /unmute</div>
+    </div>
+   </div>
+   <div class="toolbar" style="margin-top:14px"><button class="btn primary" onclick="saveSet(TG_KEYS)">保存</button><button class="btn" onclick="act('settings/test_tg',{})">发送测试</button>
+    <button class="btn" onclick="act('settings/tg_status_now',{})">推送当前状态</button><button class="btn" onclick="act('settings/tg_status_now',{daily:1})">推送状态 + 日报</button><span id="tgMute"></span></div></div>`;
+}
+async function loadTgInfo(){
+  try{ const j=await api('settings/tg_info'); const st=j.status, el=$('#tgState'); if(!el) return;
+    el.innerHTML = !S.st.settings.tg_token ? '未配置' : (st.bot?`机器人 <b>@${esc(st.bot)}</b> 已连接`:'正在连接机器人…') + (st.ok===false?` · <span class="bad">最近发送失败：${esc(st.err)}</span>`:st.ok?' · <span class="ok">推送正常</span>':'');
+    $('#tgMute').innerHTML = j.muted?`<span class="warn">🔕 已静音至 ${tm(j.mute_until)}</span> <button class="btn sm" onclick="act('settings/tg_unmute',{}).then(loadTgInfo)">取消静音</button>`:'';
+    return j;
+  }catch(e){}
+}
+async function detectChat(){
+  const j=await loadTgInfo(); const box=$('#tgChats'); if(!j) return;
+  if(!S.st.settings.tg_token){ box.innerHTML='<div class="hint warn">请先填写 Bot Token 并点【保存】</div>'; return; }
+  if(!j.chats.length){ box.innerHTML='<div class="hint warn">还没收到消息：请在 Telegram 里给机器人发 /start，几秒后再点一次</div>'; return; }
+  box.innerHTML='<div class="hint">点击选择：</div>'+j.chats.map(c=>`<button class="btn sm" style="margin:4px 4px 0 0" onclick="$('#g_tg_chat').value='${esc(c.id)}'">${esc(c.title||c.type)} · <span class="mono">${esc(c.id)}</span></button>`).join('');
+}
+function copyCmd(){ const t=$('#icmd').textContent; (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('已复制','okk')).catch(()=>{ const r=document.createRange(); r.selectNode($('#icmd')); getSelection().removeAllRanges(); getSelection().addRange(r); toast('请按 Ctrl+C 复制'); }); }
+async function rotateKey(){ if(!confirm('更换 Farm Key 后，所有矿机都会断开，需重新执行安装命令。确定？')) return; await act('settings/rotate_key',{},'已更换'); refresh(true); }
+async function saveSet(keys){ const b={}; keys.forEach(k=>b[k]=val('g_'+k)===1?true:val('g_'+k)===0?false:val('g_'+k)); await act('settings',b,'已保存'); refresh(true); }
+async function saveEntrance(){
+  const v=$('#g_entrance').value.trim().replace(/^\/+|\/+$/g,'');
+  const url=location.origin+'/'+(v?v+'/':'');
+  if(!confirm(v?`保存后面板地址变为：\n${url}\n\n请先收藏这个地址，旧地址将无法访问。确定？`:'确定关闭安全入口？面板将可以从根地址访问。')) return;
+  await act('settings',{entrance:v},'已保存，正在跳转…'); setTimeout(()=>location.href=url, 800);
+}
+async function changePw(){ const pw=$('#g_pw').value; const j=await act('settings',{new_password:pw},'密码已修改，请重新登录'); if(j.relogin) showLogin(); }
+
+/* ---------------------------------------------------------- 启动 */
+refresh(true);
+setInterval(()=>{ if(!document.hidden && !$('#login').classList.contains('on')) refresh(false); }, 8000);
+setInterval(()=>{ if(S.tab==='events' && !document.hidden) loadEvents(); }, 15000);
+</script>
+</body>
+</html>

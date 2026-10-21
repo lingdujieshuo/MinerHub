@@ -1,0 +1,29 @@
+# ===================== MinerHub OS 配置文件 =====================
+# 刻录 U 盘后，在 Windows / Mac 上打开名为 MINERHUB 的盘直接编辑本文件，
+# 保存后插回矿机开机即生效（每次开机都会重新读取）。
+# 也可以在矿机上执行： mh config
+# 规则：每行 键=值，# 开头是注释；值里不要出现 “空格+#”。
+
+# MinerHub 面板地址（矿机能访问到的地址）
+SERVER=__SERVER__
+
+# 面板【设置】页里的 Farm Key
+FARM_KEY=__FARM_KEY__
+
+# 矿机名：留空 = 自动用 rig-网卡MAC后6位（多根 U 盘刻同一个镜像也不会重名）
+RIG_NAME=
+
+# 时区
+TIMEZONE=__TZ__
+
+# 控制台 / SSH 登录用户 miner 的密码（建议改掉）
+PASSWORD=__PASSWORD__
+
+# SSH 公钥（可选，整行粘贴）
+SSH_KEY=
+
+# 网络：STATIC_IP 留空 = 自动获取 IP（DHCP，推荐）
+# 静态示例：STATIC_IP=192.168.1.51/24   GATEWAY=192.168.1.1   DNS=1.1.1.1 8.8.8.8
+STATIC_IP=
+GATEWAY=
+DNS=
