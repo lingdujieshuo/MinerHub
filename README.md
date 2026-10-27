@@ -42,6 +42,7 @@ MinerHub 用**一个 Python 文件做面板，一个 Python 文件做矿机 Agen
 - 面板和 Agent **只用 Python 3 标准库**，不需要 pip、Docker 或数据库服务（数据存在一个 SQLite 文件里）。
 - 矿机端提供现成的 **MinerHub OS**：基于 Ubuntu Server 24.04，集成 NVIDIA 驱动、SRBMiner-MULTI 和 Agent，刻进 U 盘就能开机挖矿。
 - 当前支持用 SRBMiner-MULTI 挖 **Quantus（算法 `quantus`）** 和 **Pearl（算法 `pearlhash`）**，飞行表里也可以填其它 SRBMiner 支持的算法。
+- 飞行表可选矿工程序：SRBMiner-MULTI、LDMiner（Quantus 0 抽水）、**WildRig Multi**（Pearl 0 抽水，配合 pearlhash.xyz 矿池）。选 WildRig 时 Agent 会自动从作者 GitHub 下载 Linux 版。
 
 ## 功能一览
 
@@ -228,6 +229,10 @@ curl -fsSL http://面板地址:8800/dl/install-agent.sh | sudo bash -s -- http:/
 | 矿工名 | 默认 `%RIG%`；如果矿池要求把矿工名写在钱包后面，这里就留空 |
 | TLS | 矿池要求 SSL 端口时勾选 |
 | 额外参数 | 原样追加到矿工命令行，例如 `--gpu-intensity 30` |
+| 矿工程序 | SRBMiner-MULTI / LDMiner / WildRig Multi |
+
+**用 WildRig 挖 Pearl**：矿工程序选 WildRig，矿池 `pool.pearlhash.xyz:9000`（TLS 用 `hk.pearlhash.net:9443` 并勾选 TLS），钱包填 PRL 地址；要同时领合并挖矿的 NOCK，钱包写成 `PRL地址@nock=NOCK地址`。
+WildRig 的锁核心 / 锁显存 / 功耗墙由 Agent 在启动前用 `nvidia-smi` 设置，核心偏移、显存偏移、风扇由 WildRig 写入。程序默认装在 `/opt/minerhub/wildrig/`，删除该目录即可在下次启动时自动更新；在 `agent.json` 里写 `"wildrig_version": "0.51.8"` 可固定版本。
 
 ### 超频
 

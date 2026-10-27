@@ -6,8 +6,8 @@ MinerHub Agent —— 运行在每台 Ubuntu 矿机上（root，systemd 托管�
 零依赖：只用 Python 3 标准库，4G 内存的矿机也毫无压力。
 
 职责：
-  1. 管理 SRBMiner-MULTI 进程（启动 / 停止 / 崩溃自动拉起 / 配置变更自动重启）
-  2. 采集 nvidia-smi + SRBMiner API 数据，每 10 秒上报面板
+  1. 管理矿工进程（SRBMiner-MULTI / LDMiner / WildRig Multi；启动 / 停止 / 崩溃自动拉起 / 配置变更自动重启）
+  2. 采集 nvidia-smi + 矿工 API（WildRig 另解析日志）数据，每 10 秒上报面板
   3. 执行面板下发的指令：重启矿工、重启系统、关机、读日志、执行命令、WOL 唤醒其它矿机
   4. 本地看门狗：零算力重启、超温停机、掉卡告警/重启
   5. 定时开机：把面板算好的下一次开机时间写入主板 RTC 闹钟（rtcwake）
@@ -16,7 +16,7 @@ MinerHub Agent —— 运行在每台 Ubuntu 矿机上（root，systemd 托管�
 import json, os, re, shlex, signal, socket, subprocess, sys, threading, time
 import urllib.parse, urllib.request
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 BASE = "/opt/minerhub"
 CONF_PATH = os.environ.get("MINERHUB_CONF", BASE + "/agent.json")
 STATE_PATH = os.environ.get("MINERHUB_STATE", BASE + "/state.json")
@@ -45,12 +45,79 @@ FARM_KEY = CONF.get("farm_key", "")
 RIG_ID = CONF.get("rig_id") or socket.gethostname()
 MINER_BIN = CONF.get("miner_path", BASE + "/srbminer/SRBMiner-MULTI")
 LDMINER_BIN = CONF.get("ldminer_path", BASE + "/ldminer/ldminer")
-MINER_PROC_NAMES = ("SRBMiner-MULTI", "ldminer")
+WILDRIG_BIN = CONF.get("wildrig_path", BASE + "/wildrig/wildrig-multi")
+# WildRig 版本：留空 = GitHub 最新版；也可在 agent.json 里写 "wildrig_version": "0.51.8" 固定版本
+WILDRIG_VERSION = str(CONF.get("wildrig_version", "") or "").strip()
+MINER_PROC_NAMES = ("SRBMiner-MULTI", "ldminer", "wildrig-multi")
+
+
+def miner_kind(cfg):
+    fl = (cfg or {}).get("flight") or {}
+    k = str(fl.get("miner") or "").lower()
+    return k if k in ("ldminer", "wildrig") else "srbminer"
 
 
 def miner_bin(cfg):
-    fl = (cfg or {}).get("flight") or {}
-    return LDMINER_BIN if str(fl.get("miner") or "").lower() == "ldminer" else MINER_BIN
+    return {"ldminer": LDMINER_BIN, "wildrig": WILDRIG_BIN}.get(miner_kind(cfg), MINER_BIN)
+
+
+def ensure_wildrig():
+    """WildRig 不在本机时，从作者 GitHub Releases 下载 Linux 版（删除 /opt/minerhub/wildrig 目录即可强制更新）"""
+    if os.path.exists(WILDRIG_BIN):
+        return True
+    import tarfile, tempfile, shutil
+    url = None
+    try:
+        if WILDRIG_VERSION:
+            url = ("https://github.com/andru-kun/wildrig-multi/releases/download/%s/wildrig-multi-linux-%s.tar.gz"
+                   % (WILDRIG_VERSION, WILDRIG_VERSION))
+        else:
+            try:                                            # GitHub API 不通时退回内置的已知版本
+                req = urllib.request.Request("https://api.github.com/repos/andru-kun/wildrig-multi/releases/latest",
+                                             headers={"User-Agent": "MinerHub-Agent/" + VERSION})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    rel = json.loads(r.read().decode("utf-8"))
+                for a in rel.get("assets") or []:
+                    n = a.get("name", "").lower()
+                    if "linux" in n and "hiveos" not in n and n.endswith((".tar.gz", ".tar.xz", ".tgz")):
+                        url = a.get("browser_download_url")
+                        break
+            except Exception as e:
+                log("查询 WildRig 最新版失败（%s），使用内置版本" % e)
+        if not url:
+            url = "https://github.com/andru-kun/wildrig-multi/releases/download/0.51.8/wildrig-multi-linux-0.51.8.tar.gz"
+        tmp = tempfile.mkdtemp(prefix="wildrig-")
+        pkg = os.path.join(tmp, "pkg.tar")
+        req = urllib.request.Request(url, headers={"User-Agent": "MinerHub-Agent/" + VERSION})
+        with urllib.request.urlopen(req, timeout=180) as r, open(pkg, "wb") as f:
+            shutil.copyfileobj(r, f)
+        with tarfile.open(pkg) as t:
+            for m in t.getmembers():                       # 防目录穿越
+                if m.name.startswith("/") or ".." in m.name.split("/"):
+                    raise RuntimeError("压缩包路径异常: %s" % m.name)
+            t.extractall(os.path.join(tmp, "x"))
+        found = None
+        for root, _, files in os.walk(os.path.join(tmp, "x")):
+            if "wildrig-multi" in files:
+                found = os.path.join(root, "wildrig-multi")
+                break
+        if not found:
+            raise RuntimeError("压缩包里没找到 wildrig-multi")
+        dst = os.path.dirname(WILDRIG_BIN)
+        os.makedirs(dst, exist_ok=True)
+        for n in os.listdir(os.path.dirname(found)):
+            s = os.path.join(os.path.dirname(found), n)
+            if os.path.isfile(s):
+                shutil.copy2(s, os.path.join(dst, n))
+        os.chmod(WILDRIG_BIN, 0o755)
+        with open(os.path.join(dst, "VERSION.txt"), "w") as f:
+            f.write(os.path.basename(url) + "\n")
+        shutil.rmtree(tmp, ignore_errors=True)
+        event("info", "已下载 WildRig：%s" % os.path.basename(url))
+        return True
+    except Exception as e:
+        event("error", "下载 WildRig 失败（%s）：可手动把 wildrig-multi 放到 %s" % (e, os.path.dirname(WILDRIG_BIN)))
+        return False
 
 
 def ensure_ldminer():
@@ -275,6 +342,81 @@ def parse_api(j):
     return res
 
 
+HS_UNIT = {"": 1, "K": 1e3, "M": 1e6, "G": 1e9, "T": 1e12, "P": 1e15, "E": 1e18}
+
+
+def first_num(v):
+    """[10s, 60s, 15m] 这类数组取第一个有效值"""
+    if isinstance(v, list):
+        for x in v:
+            r = fnum(x)
+            if r:
+                return r
+        return fnum(v[0]) if v else None
+    return fnum(v)
+
+
+def parse_wildrig(j):
+    """WildRig：先读 API（xmrig 风格 JSON），API 拿不到算力时退回解析日志里的统计表"""
+    res = {"algo": None, "hs_total": None, "gpu_hs": {}, "accepted": None, "rejected": None,
+           "pool": None, "version": None, "uptime": None, "bus_map": {}}
+    if isinstance(j, dict):
+        res["version"] = j.get("version") or j.get("miner_version")
+        res["algo"] = j.get("algo") or j.get("algorithm")
+        hr = j.get("hashrate") or {}
+        if isinstance(hr, dict):
+            res["hs_total"] = first_num(hr.get("total"))
+            for i, t in enumerate(hr.get("threads") or []):
+                v = first_num(t)
+                if v is not None:
+                    res["gpu_hs"][i] = v
+        r = j.get("results") or {}
+        if isinstance(r, dict):
+            good, total = fnum(r.get("shares_good")), fnum(r.get("shares_total"))
+            res["accepted"] = good
+            if good is not None and total is not None:
+                res["rejected"] = max(0, total - good)
+        c = j.get("connection") or {}
+        if isinstance(c, dict):
+            res["pool"] = c.get("pool")
+            res["uptime"] = fnum(c.get("uptime"))
+        res["uptime"] = res["uptime"] or fnum(j.get("uptime"))
+    if not res["hs_total"]:
+        lg = parse_wildrig_log()
+        for k, v in lg.items():
+            if v not in (None, {}) and not res.get(k):
+                res[k] = v
+    if not res["hs_total"] and res["gpu_hs"]:
+        res["hs_total"] = sum(v or 0 for v in res["gpu_hs"].values())
+    fl = (CUR_CFG or {}).get("flight") or {}
+    res["algo"] = res["algo"] or fl.get("algorithm")
+    res["pool"] = res["pool"] or fl.get("pool")
+    if not res["version"]:
+        res["version"] = "WildRig " + read(os.path.join(os.path.dirname(WILDRIG_BIN), "VERSION.txt")).strip().replace(
+            "wildrig-multi-linux-", "").replace(".tar.gz", "") or "WildRig"
+    return res
+
+
+def parse_wildrig_log():
+    """从 miner.log 最后一个 Statistics 表格里取单卡算力 / 总算力 / 份额"""
+    out = {"gpu_hs": {}, "hs_total": None, "accepted": None, "rejected": None}
+    txt = tail(MINER_LOG, 120)
+    blocks = txt.split("Statistics")
+    if len(blocks) < 2:
+        return out
+    last = blocks[-1]
+    for m in re.finditer(r"^\s*#(\d+)\s+.+?\s([\d.]+)\s*([KMGTPE]?)H/s", last, re.M):
+        out["gpu_hs"][int(m.group(1)) - 1] = float(m.group(2)) * HS_UNIT[m.group(3)]
+    m = re.search(r"^\s*10s:\s+([\d.]+)\s*([KMGTPE]?)H/s", last, re.M)
+    if m:
+        out["hs_total"] = float(m.group(1)) * HS_UNIT[m.group(2)]
+    for key, name in (("accepted", "Accepted"), ("rejected", "Rejected")):
+        m = re.search(name + r":\s+(\d+)", last)
+        if m:
+            out[key] = float(m.group(1))
+    return out
+
+
 def merge_hs(gpus, p):
     by_bus = {b: i for i, b in p["bus_map"].items()}
     for g in gpus:
@@ -299,6 +441,8 @@ def build_args(cfg, ngpu):
     fl = (cfg or {}).get("flight")
     if not fl or not fl.get("algorithm") or not fl.get("pool") or not fl.get("wallet"):
         return None
+    if miner_kind(cfg) == "wildrig":
+        return build_args_wildrig(cfg, ngpu)
     a = ["--disable-cpu", "--algorithm", fl["algorithm"].strip(), "--pool", fl["pool"].strip(),
          "--wallet", fl["wallet"].strip().replace("%RIG%", RIG_ID),
          "--api-enable", "--api-port", str(API_PORT), "--api-rig-name", RIG_ID]
@@ -333,6 +477,76 @@ def build_args(cfg, ngpu):
     return a
 
 
+def build_args_wildrig(cfg, ngpu):
+    """WildRig Multi：0 抽水（pearlhash 等）。锁频 / 功耗墙由 Agent 用 nvidia-smi 设置，偏移和风扇交给 WildRig（NVML）"""
+    fl = cfg["flight"]
+    pool = fl["pool"].strip()
+    if "://" not in pool:
+        pool = ("stratum+ssl://" if str(fl.get("tls")) in ("1", "true", "True") else "stratum+tcp://") + pool
+    a = ["--algo", fl["algorithm"].strip(), "--url", pool,
+         "--user", fl["wallet"].strip().replace("%RIG%", RIG_ID),
+         "--pass", str(fl.get("password") or "").strip() or "x",
+         "--opencl-platforms", "nvidia",            # 只用 N 卡，避免带核显 / APU 的主板把核显也拉进来
+         "--api-port", str(API_PORT), "--api-worker-id", RIG_ID,
+         "--no-color", "--print-time", "10"]
+    worker = str(fl.get("worker") or "").strip().replace("%RIG%", RIG_ID)
+    if worker:
+        a += ["--worker", worker]
+    oc = cfg.get("oc")
+    if oc:
+        oc_args = []
+        for k, flag in (("coffset", "--gpu-core-offset"), ("moffset", "--gpu-memory-offset"), ("fan", "--gpu-fan-speed")):
+            v = expand(oc.get(k), ngpu)
+            if v:
+                oc_args += [flag, v]
+        a += oc_args
+        if str(oc.get("extra") or "").strip():
+            a += shlex.split(oc["extra"])
+    if str(fl.get("extra") or "").strip():
+        a += shlex.split(fl["extra"])
+    return a
+
+
+def oc_sig(cfg):
+    """WildRig 的锁频 / 功耗墙不在命令行里，单独记一个签名，超频改了也能触发重启"""
+    if miner_kind(cfg) != "wildrig":
+        return None
+    oc = (cfg or {}).get("oc") or {}
+    return json.dumps({k: oc.get(k) for k in ("cclock", "mclock", "plimit")}, sort_keys=True)
+
+
+def nvsmi_oc(oc, ngpu):
+    """给 WildRig 用：每次启动前先复位，再按超频配置锁核心 / 锁显存 / 设功耗墙（单位 W）"""
+    if ngpu <= 0:
+        return
+    oc = oc or {}
+    vals = {k: (expand(oc.get(k), ngpu) or "").split(",") for k in ("cclock", "mclock", "plimit")}
+    msgs = []
+    for i in range(ngpu):
+        sh(["nvidia-smi", "-i", str(i), "-rgc"], 15)
+        sh(["nvidia-smi", "-i", str(i), "-rmc"], 15)
+        c, m, p = (vals[k][i] if len(vals[k]) > i else "" for k in ("cclock", "mclock", "plimit"))
+        if c and c not in ("0", "*"):
+            rc, out = sh(["nvidia-smi", "-i", str(i), "-lgc", c], 15)
+            if rc != 0:
+                msgs.append("GPU%d 锁核心 %s 失败: %s" % (i, c, out.strip()[:80]))
+        if m and m not in ("0", "*"):
+            rc, out = sh(["nvidia-smi", "-i", str(i), "-lmc", m], 15)
+            if rc != 0:
+                msgs.append("GPU%d 锁显存 %s 失败: %s" % (i, m, out.strip()[:80]))
+        if p and p not in ("0", "*"):
+            rc, out = sh(["nvidia-smi", "-i", str(i), "-pl", p], 15)
+            if rc != 0:
+                msgs.append("GPU%d 功耗墙 %sW 失败: %s" % (i, p, out.strip()[:80]))
+        else:
+            rc, out = sh(["nvidia-smi", "-i", str(i), "--query-gpu=power.default_limit",
+                          "--format=csv,noheader,nounits"], 15)
+            if rc == 0 and num(out):
+                sh(["nvidia-smi", "-i", str(i), "-pl", str(int(num(out)))], 15)
+    if msgs:
+        event("warn", "超频部分未生效：" + "；".join(msgs))
+
+
 class Miner:
     def __init__(self):
         self.proc = None
@@ -352,6 +566,17 @@ class Miner:
             if binary == LDMINER_BIN and not ensure_ldminer():
                 self.next_try = time.time() + 120
                 return False
+            if binary != WILDRIG_BIN and getattr(self, "binary", None) == WILDRIG_BIN:
+                for i in range(64):                       # 从 WildRig 切回别的矿工：清掉 nvidia-smi 锁频
+                    if sh(["nvidia-smi", "-i", str(i), "-rgc"], 15)[0] != 0:
+                        break
+                    sh(["nvidia-smi", "-i", str(i), "-rmc"], 15)
+            if binary == WILDRIG_BIN:
+                if not ensure_wildrig():
+                    self.next_try = time.time() + 300
+                    return False
+                rc, out = sh(["nvidia-smi", "-L"], 15)
+                nvsmi_oc((CUR_CFG or {}).get("oc"), len([l for l in out.splitlines() if l.startswith("GPU ")]) if rc == 0 else 0)
             if not os.path.exists(binary):
                 event("error", "找不到矿工程序 %s，请重新运行安装脚本" % binary)
                 self.next_try = time.time() + 120
@@ -370,6 +595,7 @@ class Miner:
                                          stdin=subprocess.DEVNULL, cwd=os.path.dirname(binary),
                                          start_new_session=True, env=env)
             self.args, self.started, self.binary = args, time.time(), binary
+            self.oc_sig = oc_sig(CUR_CFG)
             log("矿工已启动 pid=%s" % self.proc.pid)
             return True
 
@@ -603,9 +829,10 @@ def reconcile(cfg, gpus, gerr, lost, p, state):
         if now >= M.next_try:
             M.start(args)
         return
-    if args != M.args or miner_bin(cfg) != getattr(M, "binary", None) or RESTART_REQ:
+    changed = args != M.args or miner_bin(cfg) != getattr(M, "binary", None) or oc_sig(cfg) != getattr(M, "oc_sig", None)
+    if changed or RESTART_REQ:
         RESTART_REQ = False
-        event("info", "应用新配置，重启矿工" if (args != M.args or miner_bin(cfg) != getattr(M, "binary", None)) else "按指令重启矿工")
+        event("info", "应用新配置，重启矿工" if changed else "按指令重启矿工")
         M.stop()
         M.start(args)
         WD["zero_since"] = None
@@ -666,7 +893,10 @@ def main():
                 NET = net_info()
             gpus, gerr, lost = gpu_stats()
             raw = miner_api_raw() if M.running() else None
-            p = parse_api(raw)
+            if miner_kind(CUR_CFG) == "wildrig":
+                p = parse_wildrig(raw) if M.running() else parse_api(None)
+            else:
+                p = parse_api(raw)
             merge_hs(gpus, p)
             stats = {
                 "ts": int(t0), "gpu_error": gerr, "temp_hold": WD["temp_hold"],

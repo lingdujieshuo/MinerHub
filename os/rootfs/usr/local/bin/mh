@@ -7,7 +7,7 @@ case "${1:-status}" in
     echo "IP     : $(hostname -I 2>/dev/null)"
     echo "面板   : $(sudo python3 -c 'import json;print(json.load(open("/opt/minerhub/agent.json"))["server"])' 2>/dev/null || echo 未配置)"
     echo "Agent  : $(systemctl is-active minerhub-agent)"
-    echo "矿工   : $(pgrep -x SRBMiner-MULTI >/dev/null && echo 运行中 || echo 未运行)"
+    echo "矿工   : $(pgrep -x 'SRBMiner-MULTI|ldminer|wildrig-multi' >/dev/null && echo 运行中 || echo 未运行)"
     echo
     nvidia-smi --query-gpu=index,name,temperature.gpu,fan.speed,power.draw,clocks.sm,clocks.mem --format=csv,noheader 2>&1 | sed 's/^/  GPU /'
     echo; tail -n 5 /var/log/minerhub/miner.log 2>/dev/null ;;

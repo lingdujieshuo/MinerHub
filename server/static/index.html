@@ -123,7 +123,7 @@ pre.out{background:#06090d;border:1px solid var(--line);border-radius:8px;paddin
 .frow{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
 .days{display:flex;gap:6px;flex-wrap:wrap}
 .days label{display:flex;align-items:center;gap:4px;background:var(--bg2);border:1px solid var(--line2);border-radius:7px;padding:4px 9px;cursor:pointer;font-size:13px}
-.preview{background:#06090d;border:1px dashed var(--line2);border-radius:8px;padding:10px;font:12px/1.5 var(--mono);color:#9fb0c2;word-break:break-all}
+.preview{background:#06090d;border:1px dashed var(--line2);border-radius:8px;padding:10px;font:12px/1.5 var(--mono);color:#9fb0c2;word-break:break-all;white-space:pre-wrap}
 .note{background:#1a1606;border:1px solid #3d3110;color:#e8d9a6;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:14px}
 
 /* login + toast */
@@ -350,7 +350,7 @@ function dOverview(d,s){
   const i=d.info||{}, m=s.m;
   const kv=[['IP / 网卡',`${d.ip||'—'} ${i.iface?'('+i.iface+')':''}`],['MAC',d.mac||'—'],['系统',i.os],['内核',i.kernel],['NVIDIA 驱动',i.driver||'—'],['CPU',i.cpu],
     ['内存',i.mem_total?`${(i.mem_total-i.mem_avail)} / ${i.mem_total} MB`:'—'],['磁盘剩余',i.disk_free_gb!=null?i.disk_free_gb+' GB':'—'],['负载',(i.load||[]).join(' ')],['系统运行',fmtDur(i.uptime)],
-    ['Agent',i.agent],['SRBMiner',m.version||'—'],['算法',m.algo||'—'],['矿池',m.pool||'—'],['期望状态',d.desired==='mining'?'挖矿':'停止'],
+    ['Agent',i.agent],['矿工',m.version||'—'],['算法',m.algo||'—'],['矿池',m.pool||'—'],['期望状态',d.desired==='mining'?'挖矿':'停止'],
     ['下次定时开机',d.cfg&&d.cfg.next_wake?tm(d.cfg.next_wake):'未设置'],['最后心跳',ago(d.last_seen)],['API',m.api_ok?'<span class="ok">正常</span>':(m.running?'<span class="warn">未响应</span>':'—')]];
   const rows=s.g.map(g=>`<tr><td>GPU${g.i}</td><td>${esc(g.name)}</td><td class="mono">${g.bus!=null?g.bus.toString(16).padStart(2,'0'):'—'}</td><td><b style="color:var(--accent2)">${m.running?fmtHs(g.hs):'—'}</b></td>
     <td class="${tcls(g.temp)}">${n0(g.temp,'°C')}</td><td>${n0(g.fan,'%')}</td><td>${n0(g.power)} / ${n0(g.plimit,' W')}</td><td>${n0(g.core)}</td><td>${n0(g.mem)}</td><td>${n0(g.util,'%')}</td><td>${g.vram?Math.round(g.vram/1024)+' G':'—'}</td>
@@ -370,8 +370,8 @@ function dConfig(d){
     <div class="toolbar"><button class="btn primary" id="c_save">保存并应用</button><span class="muted" style="font-size:12px">保存后下一次心跳（≤10 秒）矿工自动重启应用</span></div>
     <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
     <button class="btn sm danger" id="c_del">从面板移除这台矿机</button></div>
-    <div class="card"><h2 style="margin-bottom:8px">将生成的 SRBMiner 启动命令</h2><div class="preview" id="c_prev"></div><div id="c_ocmap"></div>
-    <div class="hint muted" style="font-size:12px;margin-top:8px">超频参数由 SRBMiner 通过 NVML 直接写入显卡，无需桌面环境（headless 可用）。单个值 = 所有卡相同；多个值用空格或逗号分隔（和 HiveOS 一样），按 GPU0、GPU1… 顺序对应。</div></div></div>`;
+    <div class="card"><h2 style="margin-bottom:8px">将生成的矿工启动命令</h2><div class="preview" id="c_prev"></div><div id="c_ocmap"></div>
+    <div class="hint muted" style="font-size:12px;margin-top:8px">超频参数由 SRBMiner 通过 NVML 直接写入显卡，无需桌面环境（headless 可用）；WildRig 飞行表的锁频 / 功耗墙由 Agent 用 nvidia-smi 设置，偏移和风扇由 WildRig 写入。单个值 = 所有卡相同；多个值用空格或逗号分隔（和 HiveOS 一样），按 GPU0、GPU1… 顺序对应。</div></div></div>`;
 }
 function splitOc(v){ return String(v||'').trim().split(/[\s,，;；|/]+/).filter(x=>x!==''); }
 function ocPerGpu(oc, gpus){
@@ -384,8 +384,20 @@ function ocPerGpu(oc, gpus){
     <div class="tbl"><table><tr><th>GPU</th><th>型号</th>${cols.map(c=>`<th>${c[1]}</th>`).join('')}</tr>
     ${gpus.map((g,i)=>`<tr><td>GPU${g.i}</td><td>${esc(g.name)}</td>${cols.map(([k])=>`<td class="mono">${esc(pick(k,i))}</td>`).join('')}</tr>`).join('')}</table></div>`;
 }
+function buildArgsWildrig(fl, oc, ngpu, rig, ex){
+  let pool=String(fl.pool||'').trim(); if(!pool.includes('://')) pool=(+fl.tls?'stratum+ssl://':'stratum+tcp://')+pool;
+  const a=['--algo',fl.algorithm,'--url',pool,'--user',String(fl.wallet).replace(/%RIG%/g,rig),'--pass',fl.password||'x','--opencl-platforms','nvidia','--api-port','21550','--api-worker-id',rig,'--no-color','--print-time','10'];
+  const w=String(fl.worker||'').replace(/%RIG%/g,rig).trim(); if(w) a.push('--worker',w);
+  const pre=[];
+  if(oc){ [['coffset','--gpu-core-offset'],['moffset','--gpu-memory-offset'],['fan','--gpu-fan-speed']].forEach(([k,f])=>{ const v=ex(oc[k]); if(v) a.push(f,v); });
+    if(oc.extra) a.push(oc.extra);
+    [['cclock','-lgc'],['mclock','-lmc'],['plimit','-pl']].forEach(([k,f])=>{ const v=ex(oc[k]); if(v) pre.push(`nvidia-smi ${f} ${v}`); }); }
+  if(fl.extra) a.push(fl.extra);
+  return (pre.length?'# 启动前由 Agent 执行（每张卡分别设置）：\n# '+pre.join('\n# ')+'\n':'')+'wildrig-multi '+a.join(' ');
+}
 function buildArgs(fl, oc, ngpu, rig){
   if(!fl) return null;
+  if(fl.miner==='wildrig') return buildArgsWildrig(fl, oc, ngpu, rig, (v)=>{ const p=splitOc(v); if(!p.length||!ngpu) return null; let q=p.length===1?Array(ngpu).fill(p[0]):p.concat(Array(Math.max(0,ngpu-p.length)).fill(p[p.length-1])); return q.slice(0,ngpu).join(','); });
   const a=['--disable-cpu','--algorithm',fl.algorithm,'--pool',fl.pool,'--wallet',String(fl.wallet).replace(/%RIG%/g,rig),'--api-enable','--api-port','21550','--api-rig-name',rig];
   const w=String(fl.worker||'').replace(/%RIG%/g,rig).trim(); if(w) a.push('--worker',w);
   if(fl.password) a.push('--password',fl.password); if(+fl.tls) a.push('--tls','true'); if(fl.tls_cert) a.push('--tls-cert-sha256',fl.tls_cert);
@@ -455,7 +467,7 @@ const val=id=>{ const e=$('#'+id); return e.type==='checkbox'?(e.checked?1:0):e.
 /* ---------------------------------------------------------- 飞行表 */
 function vFlights(){
   const used=id=>S.st.rigs.filter(r=>r.flight_id==id).length;
-  const rows=S.st.flights.map(f=>`<tr><td><b>${esc(f.name)}</b></td><td><span class="tag algo">${esc(f.algorithm)}</span> <span class="tag">${f.miner==='ldminer'?'LDMiner':'SRBMiner'}</span></td><td class="wrap mono">${esc(f.pool)}</td><td class="wrap mono" title="${esc(f.wallet)}">${esc(f.wallet)}</td><td class="mono">${esc(f.worker)}</td><td>${used(f.id)} 台</td>
+  const rows=S.st.flights.map(f=>`<tr><td><b>${esc(f.name)}</b></td><td><span class="tag algo">${esc(f.algorithm)}</span> <span class="tag">${({ldminer:'LDMiner',wildrig:'WildRig'})[f.miner]||'SRBMiner'}</span></td><td class="wrap mono">${esc(f.pool)}</td><td class="wrap mono" title="${esc(f.wallet)}">${esc(f.wallet)}</td><td class="mono">${esc(f.worker)}</td><td>${used(f.id)} 台</td>
     <td style="white-space:nowrap"><button class="btn sm" onclick="editFlight(${f.id})">编辑</button> <button class="btn sm" onclick="editFlight(${f.id},true)">复制</button> <button class="btn sm danger" onclick="delRow('flight',${f.id},'${esc(f.name)}')">删除</button></td></tr>`).join('');
   return `<div class="toolbar"><h2>飞行表</h2><span class="muted">= 挖什么币、去哪个矿池、打到哪个钱包</span><span class="sp"></span><button class="btn primary" onclick="editFlight()">＋ 新建飞行表</button></div>
    <div class="tbl"><table><tr><th>名称</th><th>算法</th><th>矿池</th><th>钱包</th><th>矿工名</th><th>使用</th><th></th></tr>${rows||'<tr><td colspan="7" class="empty">还没有飞行表，先建一个</td></tr>'}</table></div>`;
@@ -464,6 +476,7 @@ const FL_TPL={
   qtc_kryptex_ld:{name:'Quantus · Kryptex · LDMiner',miner:'ldminer',algorithm:'quantus',pool:'qtc.kryptex.network:7049',worker:'%RIG%'},
   qtc_kryptex:{name:'Quantus · Kryptex',algorithm:'quantus',pool:'qtc.kryptex.network:7049',worker:'%RIG%'},
   qtc_lucky:{name:'Quantus · LuckyPool',algorithm:'quantus',pool:'eu.lproute.com:5660',worker:'%RIG%'},
+  prl_pearlhash_wr:{name:'Pearl · pearlhash.xyz · WildRig',miner:'wildrig',algorithm:'pearlhash',pool:'pool.pearlhash.xyz:9000',worker:'%RIG%',wallet:'你的PRL钱包地址@nock=你的NOCK地址'},
   prl_kryptex:{name:'Pearl · Kryptex',algorithm:'pearlhash',pool:'prl.kryptex.network:7048',worker:'',wallet:'你的PRL钱包地址.%RIG%'},
 };
 function editFlight(id, copy){
@@ -472,7 +485,7 @@ function editFlight(id, copy){
   openModal(id&&!copy?'编辑飞行表':'新建飞行表', `
     ${id?'':`<div class="toolbar"><span class="muted">快速模板：</span>${Object.entries(FL_TPL).map(([k,t])=>`<button class="btn sm" onclick="fillTpl('${k}')">${t.name}</button>`).join('')}</div>`}
     <div class="frow"><div class="f"><label>名称</label><input id="f_name" value="${esc(f.name)}"></div>
-    <div class="f"><label>矿工程序</label><select id="f_miner"><option value="srbminer" ${f.miner!=='ldminer'?'selected':''}>SRBMiner-MULTI（有开发费）</option><option value="ldminer" ${f.miner==='ldminer'?'selected':''}>LDMiner（0 抽水，仅 Quantus）</option></select></div></div>
+    <div class="f"><label>矿工程序</label><select id="f_miner"><option value="srbminer" ${f.miner!=='ldminer'&&f.miner!=='wildrig'?'selected':''}>SRBMiner-MULTI（有开发费）</option><option value="ldminer" ${f.miner==='ldminer'?'selected':''}>LDMiner（0 抽水，仅 Quantus）</option><option value="wildrig" ${f.miner==='wildrig'?'selected':''}>WildRig Multi（Pearl 0 抽水，用 pearlhash.xyz 矿池）</option></select></div></div>
     <div class="frow">
     <div class="f"><label>算法 --algorithm</label><input id="f_algorithm" list="algos" value="${esc(f.algorithm)}" placeholder="quantus / pearlhash"><datalist id="algos"><option value="quantus"><option value="pearlhash"></datalist></div></div>
     <div class="f"><label>矿池 --pool</label><input id="f_pool" class="mono" value="${esc(f.pool)}" placeholder="host:port"></div>
@@ -484,7 +497,7 @@ function editFlight(id, copy){
     <div class="f"><label>额外参数</label><input id="f_extra" class="mono" value="${esc(f.extra)}" placeholder="例如：--gpu-intensity 30 或 --pearl-k2 0,1,2"></div>`,
     async()=>{ const b={id:f.id}; ['name','miner','algorithm','pool','wallet','worker','password','tls','tls_cert','extra'].forEach(k=>b[k]=val('f_'+k)); await act('flight/save',b,'已保存'); closeModal(); refresh(true); });
 }
-function fillTpl(k){ const t=FL_TPL[k]; Object.entries(t).forEach(([f,v])=>{ const e=$('#f_'+f); if(e) e.value=v; }); if(!t.wallet) $('#f_wallet').value=''; $('#f_wallet').focus(); }
+function fillTpl(k){ const t=FL_TPL[k]; $('#f_miner').value=t.miner||'srbminer'; Object.entries(t).forEach(([f,v])=>{ const e=$('#f_'+f); if(e) e.value=v; }); if(!t.wallet) $('#f_wallet').value=''; $('#f_wallet').focus(); }
 async function delRow(kind,id,name){ if(!confirm(`删除「${name}」？`)) return; await act(kind+'/'+id+'/delete',{},'已删除'); refresh(true); }
 
 /* ---------------------------------------------------------- 超频 */
